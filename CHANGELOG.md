@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.2](https://github.com/NikAtNight/localflow/compare/v1.6.1...v1.6.2) (2026-10-01)
+
+
+### Fixes
+
+* resolve dictation stalls and command, CLI, and history bugs ([396b8ff](https://github.com/NikAtNight/localflow/commit/396b8ff149a32d28de9e1a23e97e02c78af943d2))
+
 ## [1.6.1](https://github.com/NikAtNight/localflow/compare/v1.6.0...v1.6.1) (2026-09-13)
 
 
