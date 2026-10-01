@@ -116,6 +116,31 @@ final class InjectionCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.pendingCount, 0)
     }
 
+    func testAloneAndQueuedCommandsHaveDeadlinesWithoutCompletedFollower() async {
+        var timers: [DispatchWorkItem] = []
+        var cancelled: [Int] = []
+        var counts: [Int] = []
+        let coordinator = InjectionCoordinator(
+            stallTimeout: 90,
+            injectionInterval: 0,
+            scheduleStall: { _, work in timers.append(work) },
+            onInject: { _ in XCTFail("Timed out command must not paste") },
+            onCancel: { sequence, _ in cancelled.append(sequence) },
+            onProcessingCountChange: { counts.append($0) }
+        )
+        let first = coordinator.begin(kind: .command)
+        let second = coordinator.begin(kind: .command)
+        XCTAssertEqual(timers.count, 2)
+        timers[1].perform()
+        XCTAssertEqual(cancelled, [second])
+        coordinator.complete(second, with: .inject("late second"))
+        timers[0].perform()
+        XCTAssertEqual(cancelled, [second, first])
+        XCTAssertEqual(coordinator.pendingCount, 0)
+        XCTAssertEqual(counts.last, 0)
+        coordinator.complete(first, with: .inject("late first"))
+    }
+
     private func settleAsyncWork() async {
         for _ in 0..<100 { await Task.yield() }
     }

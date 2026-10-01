@@ -125,48 +125,70 @@ enum TextInjector {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
     }
 
-    /// Reads the frontmost app's current selection by synthesizing ⌘C, then
-    /// puts the user's clipboard back. `completion` (main queue) gets nil
-    /// when nothing is selected (the pasteboard never changed) or when
-    /// Secure Input forbids the round trip.
-    ///
-    /// The restore matters: leaving the copied selection behind would make
-    /// the later `inject` snapshot it as "the user's clipboard" and hand it
-    /// back to them in place of what they actually had.
-    static func copySelection(completion: @escaping (String?) -> Void) {
-        guard !IsSecureEventInputEnabled() else {
-            completion(nil)
-            return
+    enum SelectionError: Error, LocalizedError, Equatable {
+        case unavailable
+
+        var errorDescription: String? {
+            "The focused app doesn't expose a readable text selection. Focus an editable text field and check LocalFlow's Accessibility permission, then try again."
         }
-        let pasteboard = NSPasteboard.general
-        let saved = snapshot(of: pasteboard)
-        let before = pasteboard.changeCount
-        guard postKeystroke(virtualKey: CGKeyCode(kVK_ANSI_C), flags: .maskCommand) else {
-            completion(nil)
-            return
-        }
-        // The frontmost app services the copy asynchronously; poll briefly
-        // rather than guessing one delay that is either slow or too short.
-        pollForCopy(pasteboard: pasteboard, before: before, saved: saved, attempt: 0, completion: completion)
     }
 
-    private static func pollForCopy(
-        pasteboard: NSPasteboard,
-        before: Int,
-        saved: [NSPasteboardItem],
-        attempt: Int,
-        completion: @escaping (String?) -> Void
+    typealias SelectionAttributeReader = @MainActor (AXUIElement, CFString) -> (AXError, CFTypeRef?)
+
+    private static func frontmostAccessibilityApplication() -> AXUIElement? {
+        NSWorkspace.shared.frontmostApplication.map { AXUIElementCreateApplication($0.processIdentifier) }
+    }
+
+    private static func selectionAttribute(_ element: AXUIElement, _ attribute: CFString) -> (AXError, CFTypeRef?) {
+        var value: CFTypeRef?
+        let error = AXUIElementCopyAttributeValue(element, attribute, &value)
+        return (error, value)
+    }
+
+    /// Electron builds its text accessibility tree asynchronously. Start it
+    /// before recording so the focused field is available when speech returns.
+    static func prepareSelectionAccess(
+        focusedApplication: @MainActor () -> AXUIElement? = frontmostAccessibilityApplication,
+        readAttribute: SelectionAttributeReader = selectionAttribute,
+        writeAttribute: (AXUIElement, CFString, CFTypeRef) -> AXError = AXUIElementSetAttributeValue
     ) {
-        let copied = pasteboard.changeCount != before ? pasteboard.string(forType: .string) : nil
-        guard copied == nil, attempt < 12 else {
-            pasteboard.clearContents()
-            pasteboard.writeObjects(saved)
-            completion(copied)
+        guard let application = focusedApplication() else { return }
+        let attribute = "AXManualAccessibility" as CFString
+        let (error, enabled) = readAttribute(application, attribute)
+        guard error == .success, let enabled = enabled as? Bool, !enabled else { return }
+        _ = writeAttribute(application, attribute, kCFBooleanTrue)
+    }
+
+    /// Reads selection through Accessibility without touching the clipboard.
+    /// An unsupported selection is an error, not a request to generate new text.
+    static func copySelection(
+        isSecureInputEnabled: () -> Bool = { IsSecureEventInputEnabled() },
+        focusedApplication: @MainActor () -> AXUIElement? = frontmostAccessibilityApplication,
+        readAttribute: SelectionAttributeReader = selectionAttribute,
+        completion: (Result<String?, SelectionError>) -> Void
+    ) {
+        guard !isSecureInputEnabled() else {
+            completion(.success(nil))
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.025) {
-            pollForCopy(pasteboard: pasteboard, before: before, saved: saved,
-                        attempt: attempt + 1, completion: completion)
+        guard let appElement = focusedApplication() else {
+            completion(.failure(.unavailable))
+            return
+        }
+        let (focusError, focus) = readAttribute(appElement, kAXFocusedUIElementAttribute as CFString)
+        guard focusError == .success, let focus,
+              CFGetTypeID(focus) == AXUIElementGetTypeID() else {
+            completion(.failure(.unavailable))
+            return
+        }
+        let focusedElement = focus as! AXUIElement
+        let (selectionError, selection) = readAttribute(focusedElement, kAXSelectedTextAttribute as CFString)
+        if selectionError == .noValue {
+            completion(.success(nil))
+        } else if selectionError == .success, let text = selection as? String {
+            completion(.success(text.isEmpty ? nil : text))
+        } else {
+            completion(.failure(.unavailable))
         }
     }
 

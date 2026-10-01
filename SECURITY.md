@@ -19,7 +19,7 @@ worth being explicit about them:
 |---|---|---|
 | Microphone | Records while you hold the hotkey | `com.apple.security.device.audio-input`, TCC Microphone |
 | Global key monitoring | Detects the hold-to-talk key in any app, via a `CGEventTap` on modifier-key events only | TCC Accessibility |
-| Synthesized keystrokes | Pastes with ⌘V, and reads the selection with ⌘C in command mode | TCC Accessibility |
+| Accessibility and synthesized keystrokes | Reads selected text in command mode through Accessibility and pastes with ⌘V | TCC Accessibility |
 | Clipboard access | Puts the transcript on the clipboard to paste it, then restores your previous contents | none (unrestricted on macOS) |
 | Network | Downloads the Whisper model on first run; talks to `localhost:11434` if the optional Ollama backend is used | `com.apple.security.network.client` |
 

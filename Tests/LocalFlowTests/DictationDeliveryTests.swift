@@ -91,7 +91,7 @@ final class DictationDeliveryTests: XCTestCase {
         XCTAssertFalse(delivery.isBusy)
     }
 
-    func testInjectionTimeoutCancelsMappedDictationAndRejectsItsLateResult() async {
+    func testReleaseTimeoutRetainsMappedDictationAndRejectsItsLateResult() async {
         let effects = Effects()
         var resume: CheckedContinuation<String, Never>?
         let delivery = makeDelivery(effects: effects, stallTimeout: 0.04) { _ in
@@ -103,8 +103,9 @@ final class DictationDeliveryTests: XCTestCase {
         let command = delivery.beginCommand()
         delivery.completeCommand(command, with: .inject("later command"))
         await waitUntil { effects.injected == ["later command"] }
-        XCTAssertEqual(effects.cancelled.map(\.hudGeneration), [12])
-        XCTAssertEqual(delivery.retryCount, 0)
+        XCTAssertTrue(effects.cancelled.isEmpty)
+        XCTAssertEqual(effects.releases.first?.hudGeneration, 12)
+        XCTAssertEqual(delivery.retryCount, 1)
         resume?.resume(returning: "cancelled dictation")
         await settle()
         XCTAssertEqual(effects.history, ["later command"])

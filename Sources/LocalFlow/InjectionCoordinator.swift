@@ -19,6 +19,7 @@ final class InjectionCoordinator {
         let kind: OperationKind
         let trace: DictationTrace?
         var outcome: Outcome?
+        var commandTimeout: DispatchWorkItem?
     }
 
     private let stallTimeout: TimeInterval
@@ -60,6 +61,18 @@ final class InjectionCoordinator {
         sequenceNumberCounter += 1
         operations[sequence] = Operation(kind: kind, trace: trace, outcome: nil)
         onProcessingCountChange(operations.count)
+        if kind == .command {
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, var operation = self.operations[sequence], operation.outcome == nil else { return }
+                operation.commandTimeout = nil
+                operation.outcome = .skip
+                self.operations[sequence] = operation
+                self.onCancel(sequence, .command)
+                self.drain()
+            }
+            operations[sequence]?.commandTimeout = work
+            scheduleStall(stallTimeout, work)
+        }
         return sequence
     }
 
@@ -67,6 +80,8 @@ final class InjectionCoordinator {
         guard var operation = operations[sequence], operation.outcome == nil else {
             return
         }
+        operation.commandTimeout?.cancel()
+        operation.commandTimeout = nil
         operation.outcome = outcome
         operation.trace?.record(.injectionQueued, fields: [
             .sequence: Double(sequence), .pendingCount: Double(operations.count)
@@ -111,7 +126,7 @@ final class InjectionCoordinator {
         let hasResolvedFollower = operations.contains { sequence, operation in
             sequence > nextSequenceToDrain && operation.outcome != nil
         }
-        guard hasResolvedFollower else { return }
+        guard hasResolvedFollower, head.kind == .dictation else { return }
 
         let stalledSequence = nextSequenceToDrain
         if stalledHeadSequence == stalledSequence, headStallTimeout != nil {

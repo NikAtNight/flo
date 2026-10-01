@@ -45,8 +45,7 @@ struct LocalFlowMain {
                     exit(1)
                 }
             }
-            // Unlike --transcribe, replay uses the main-actor session and
-            // its timers. Blocking the main thread on a semaphore deadlocks it.
+            // Replay needs the main actor and its timers to keep running.
             RunLoop.main.run()
             return
         }
@@ -93,9 +92,7 @@ struct LocalFlowMain {
     /// including corrections, voice formatting, and optional cleanup. Prints
     /// per-stage timings to stderr and the final text to stdout.
     private static func transcribeFile(_ path: String, cleanupEnabled: Bool) {
-        let done = DispatchSemaphore(value: 0)
-        Task {
-            defer { done.signal() }
+        Task { @MainActor in
             do {
                 let stderr = FileHandle.standardError
                 let transcriber = Transcriber()
@@ -125,12 +122,15 @@ struct LocalFlowMain {
                 }
 
                 print(text)
+                exit(0)
             } catch {
                 FileHandle.standardError.write(Data("error: \(error.localizedDescription)\n".utf8))
                 exit(1)
             }
         }
-        done.wait()
+        // Cleanup runs on the main actor, so keep it available while awaiting
+        // transcription instead of blocking the main thread.
+        RunLoop.main.run()
     }
 
     private static func elapsedMs(since start: Date) -> Int {

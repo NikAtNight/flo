@@ -5,13 +5,13 @@ import XCTest
 /// canonical-hallucination match used to drop invented filler for silent audio.
 final class TranscriberTests: XCTestCase {
 
-    func testInferenceGateSerializesWaitersInFIFOOrder() async {
+    func testInferenceGateSerializesWaitersInFIFOOrder() async throws {
         let gate = TranscriptionGate()
         let order = CompletionOrder()
-        await gate.acquire()
+        try await gate.acquire()
 
         let first = Task {
-            await gate.acquire()
+            try await gate.acquire()
             await order.append(1)
             await gate.release()
         }
@@ -19,7 +19,7 @@ final class TranscriberTests: XCTestCase {
         XCTAssertTrue(firstQueued)
 
         let second = Task {
-            await gate.acquire()
+            try await gate.acquire()
             await order.append(2)
             await gate.release()
         }
@@ -27,10 +27,49 @@ final class TranscriberTests: XCTestCase {
         XCTAssertTrue(secondQueued)
 
         await gate.release()
-        await first.value
-        await second.value
+        try await first.value
+        try await second.value
         let completed = await order.values
         XCTAssertEqual(completed, [1, 2])
+    }
+
+    func testCancelledWaiterExitsWhileActiveInferenceKeepsPermit() async throws {
+        let gate = TranscriptionGate()
+        try await gate.acquire()
+        let cancelled = Task { try await gate.acquire() }
+        let queued = await waitForWaiterCount(1, on: gate)
+        XCTAssertTrue(queued)
+        cancelled.cancel()
+        do {
+            try await cancelled.value
+            XCTFail("Cancelled queued inference must fail")
+        } catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
+        let removed = await waitForWaiterCount(0, on: gate)
+        XCTAssertTrue(removed)
+
+        let next = Task {
+            try await gate.acquire()
+            await gate.release()
+        }
+        let stillBlocked = await waitForWaiterCount(1, on: gate)
+        XCTAssertTrue(stillBlocked)
+        await gate.release()
+        try await next.value
+    }
+
+    func testAlreadyCancelledRequestCannotTakeFreePermit() async throws {
+        let gate = TranscriptionGate()
+        let task = Task {
+            while !Task.isCancelled { await Task.yield() }
+            try await gate.acquire()
+        }
+        task.cancel()
+        do {
+            try await task.value
+            XCTFail("Cancelled request must not take a permit")
+        } catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
+        try await gate.acquire()
+        await gate.release()
     }
 
     private func waitForWaiterCount(_ count: Int, on gate: TranscriptionGate) async -> Bool {
@@ -43,7 +82,7 @@ final class TranscriberTests: XCTestCase {
 
     // MARK: stripSpecialTokens
 
-    func testStripsBlankAudioAndAllCapsBracketTokens() {
+    func testStripsKnownNonSpeechLabels() {
         XCTAssertEqual(Transcriber.stripSpecialTokens(from: "[BLANK_AUDIO]"), "")
         XCTAssertEqual(Transcriber.stripSpecialTokens(from: "[APPLAUSE]"), "")
         XCTAssertEqual(Transcriber.stripSpecialTokens(from: "hello [BLANK_AUDIO] world"),
@@ -53,6 +92,8 @@ final class TranscriberTests: XCTestCase {
     func testStripsAngleTokens() {
         XCTAssertEqual(Transcriber.stripSpecialTokens(from: "hi <|endoftext|>"), "hi")
         XCTAssertEqual(Transcriber.stripSpecialTokens(from: "<|startoftranscript|>done"), "done")
+        XCTAssertEqual(Transcriber.stripSpecialTokens(from: "<|en|><|transcribe|><|0.00|>hello<|1.50|>"), "hello")
+        XCTAssertEqual(Transcriber.stripSpecialTokens(from: "<|fr|>bonjour<|nospeech|>"), "bonjour")
     }
 
     func testStripsKnownNoiseParensCaseInsensitively() {
@@ -67,6 +108,10 @@ final class TranscriberTests: XCTestCase {
         XCTAssertEqual(Transcriber.stripSpecialTokens(from: "f(x)"), "f(x)")
         XCTAssertEqual(Transcriber.stripSpecialTokens(from: "[see figure 2]"), "[see figure 2]")
         XCTAssertEqual(Transcriber.stripSpecialTokens(from: "(maybe)"), "(maybe)")
+        for content in ["Array<String>", "<div>content</div>", "[API]", "[IMPORTANT]",
+                        "a < b > c", "<custom>", "<|custom|>", "<|123|>"] {
+            XCTAssertEqual(Transcriber.stripSpecialTokens(from: content), content)
+        }
         XCTAssertEqual(
             Transcriber.stripSpecialTokens(from: "the value f(x) is shown in [see figure 2]"),
             "the value f(x) is shown in [see figure 2]")

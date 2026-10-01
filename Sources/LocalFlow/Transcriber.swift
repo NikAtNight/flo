@@ -5,15 +5,38 @@ import WhisperKit
 /// mutates shared decoder/progress state, so actor reentrancy alone is not a
 /// sufficient serialization boundary.
 actor TranscriptionGate {
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
     private var occupied = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var waiters: [Waiter] = []
 
-    func acquire() async {
+    func acquire() async throws {
+        try Task.checkCancellation()
         if !occupied {
             occupied = true
             return
         }
-        await withCheckedContinuation { waiters.append($0) }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                waiters.append(Waiter(id: id, continuation: continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
+        }
+        // Cancellation can race the handoff. Return the permit if this
+        // cancelled request acquired it before cancelWaiter ran.
+        if Task.isCancelled {
+            release()
+            throw CancellationError()
+        }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let index = waiters.firstIndex(where: { $0.id == id }) else { return }
+        waiters.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 
     func release() {
@@ -21,7 +44,7 @@ actor TranscriptionGate {
             occupied = false
             return
         }
-        waiters.removeFirst().resume()
+        waiters.removeFirst().continuation.resume()
     }
 
     var waitingCount: Int { waiters.count }
@@ -34,19 +57,31 @@ actor Transcriber {
     enum TranscriberError: Error, LocalizedError {
         case notLoaded
         case noSpeech
+        case recoveryBusy
 
         var errorDescription: String? {
             switch self {
             case .notLoaded: return "Whisper model is not loaded yet."
             case .noSpeech: return "No speech was recognized in this recording."
+            case .recoveryBusy: return "Speech recognition is still stopping earlier attempts. Try reloading the model again later."
             }
         }
+    }
+
+    typealias ModelLoader = (String, DictationTrace) async throws -> WhisperKit
+    private let modelLoader: ModelLoader
+
+    init(modelLoader: @escaping ModelLoader = Transcriber.loadEngine) {
+        self.modelLoader = modelLoader
     }
 
     private var whisperKit: WhisperKit?
     private(set) var loadedModel: String?
     private var loadGeneration = 0
-    private let transcriptionGate = TranscriptionGate()
+    private var transcriptionGate = TranscriptionGate()
+    private var engineGeneration = 0
+    private var activeEngineGenerations: Set<Int> = []
+    private var quarantinedEngineGenerations: Set<Int> = []
     // One CoreML pipeline construction at a time: rapid model switches could
     // otherwise build several multi-hundred-MB pipelines concurrently.
     private let loadGate = TranscriptionGate()
@@ -90,11 +125,12 @@ actor Transcriber {
             trace.record(.modelLoadFinished, status: .warm, model: model)
             return
         }
+        guard quarantinedEngineGenerations.count < 2 else { throw TranscriberError.recoveryBusy }
         loadGeneration += 1
         let generation = loadGeneration
 
         trace.record(.modelLoadWaitStarted)
-        await loadGate.acquire()
+        try await loadGate.acquire()
         trace.record(.modelLoadAcquired)
         // A newer load was requested while this one queued; let it win
         // without building (and briefly double-retaining) a stale pipeline.
@@ -104,32 +140,10 @@ actor Transcriber {
             return
         }
 
-        // With only `model` and `downloadBase`, WhisperKit 0.18 downloads the
-        // model but leaves CoreML unloaded until the first transcription.
-        // Load now so the app's ready state is truthful and the first hotkey
-        // release does not pay model initialization latency.
-        let cachedFolder = Self.cachedModelFolder(for: model)
-        trace.record(.modelCacheChecked, fields: [.cachePresent: cachedFolder == nil ? 0 : 1])
         let pipe: WhisperKit
         do {
-            if let cachedFolder {
-                do {
-                    pipe = try await Self.measuredLoad(Self.config(modelFolder: cachedFolder), trace: trace)
-                } catch {
-                    trace.record(.modelLoadFallback, status: .fallback)
-                    // Directory presence is only a fast completeness signal. If
-                    // CoreML or tokenizer loading finds corruption, let the Hub
-                    // path verify/repair the cache instead of stranding startup.
-                    DiagLog.log(
-                        "cached model %@ failed to load (%@) — resolving through model registry",
-                        model,
-                        error.localizedDescription
-                    )
-                    pipe = try await Self.measuredLoad(Self.config(model: model), trace: trace)
-                }
-            } else {
-                pipe = try await Self.measuredLoad(Self.config(model: model), trace: trace)
-            }
+            guard quarantinedEngineGenerations.count < 2 else { throw TranscriberError.recoveryBusy }
+            pipe = try await modelLoader(model, trace)
         } catch {
             await loadGate.release()
             trace.record(.modelLoadFinished, status: error is CancellationError ? .cancelled : .failed)
@@ -143,10 +157,39 @@ actor Transcriber {
             trace.record(.modelLoadFinished, status: .stale)
             return
         }
+        try Task.checkCancellation()
+        guard quarantinedEngineGenerations.count < 2 else { throw TranscriberError.recoveryBusy }
+        engineGeneration += 1
+        transcriptionGate = TranscriptionGate()
         whisperKit = pipe
         loadedModel = model
         refreshVocabularyTokens()
         trace.record(.modelLoadFinished, status: .success)
+    }
+
+    private static func loadEngine(model: String, trace: DictationTrace) async throws -> WhisperKit {
+        let cachedFolder = cachedModelFolder(for: model)
+        trace.record(.modelCacheChecked, fields: [.cachePresent: cachedFolder == nil ? 0 : 1])
+        let pipe: WhisperKit
+        if let cachedFolder {
+            do {
+                pipe = try await measuredLoad(config(modelFolder: cachedFolder), trace: trace)
+            } catch {
+                trace.record(.modelLoadFallback, status: .fallback)
+                // Directory presence is only a fast completeness signal. If
+                // CoreML or tokenizer loading finds corruption, let the Hub
+                // path verify/repair the cache instead of stranding startup.
+                DiagLog.log(
+                    "cached model %@ failed to load (%@) — resolving through model registry",
+                    model,
+                    error.localizedDescription
+                )
+                pipe = try await measuredLoad(config(model: model), trace: trace)
+            }
+        } else {
+            pipe = try await measuredLoad(config(model: model), trace: trace)
+        }
+        return pipe
     }
 
     private static func measuredLoad(_ config: WhisperKitConfig, trace: DictationTrace) async throws -> WhisperKit {
@@ -240,20 +283,15 @@ actor Transcriber {
         guard whisperKit != nil else { throw TranscriberError.notLoaded }
         let trace = DictationTrace.current
         trace?.record(.engineWaitStarted)
-        await transcriptionGate.acquire()
-        trace?.record(.engineAcquired, model: loadedModel)
-        // Snapshot pipeline + options together AFTER the gate: a model
-        // switch while queued regenerates the vocabulary tokens, and the
-        // old pipeline must never decode with the new model's token IDs.
-        guard let whisperKit else {
-            await transcriptionGate.release()
-            throw TranscriberError.notLoaded
-        }
-        let options = currentDecodingOptions(lowEnergy: lowEnergy)
+        let lease = try await acquireEngine(lowEnergy: lowEnergy)
+        let gate = lease.gate
+        let whisperKit = lease.engine
+        let options = lease.options
+        trace?.record(.engineAcquired, model: lease.model)
         let diagnostic = DictationDiagnosticStore.Recording.current
         let audioFile = "inference-\(UUID().uuidString).wav"
         diagnostic?.saveAudio(samples, named: audioFile)
-        diagnostic?.record(.init(stage: "inferenceInput", model: loadedModel, audioFile: audioFile, sampleCount: samples.count))
+        diagnostic?.record(.init(stage: "inferenceInput", model: lease.model, audioFile: audioFile, sampleCount: samples.count))
         let results: [TranscriptionResult]
         let text: String
         let isHallucination: Bool
@@ -271,17 +309,17 @@ actor Transcriber {
                 inputFields[.temperatureFallbackLimit] = Double(options.temperatureFallbackCount)
                 trace.record(.inferenceStarted, fields: inputFields)
             }
-            results = try await whisperKit.transcribe(
-                audioArray: samples,
-                decodeOptions: options
-            )
+            results = try await runInference(generation: lease.generation) {
+                try await whisperKit.transcribe(audioArray: samples, decodeOptions: options)
+            }
+            try Task.checkCancellation()
             let inferenceFinishedAt = DispatchTime.now().uptimeNanoseconds
             text = Self.finalize(results)
             isHallucination = lowEnergy && Self.isCanonicalHallucination(text)
             raw = results.map(\.text).joined(separator: " ")
             diagnostic?.record(.init(
                 stage: "whisperRaw", text: raw,
-                status: Task.isCancelled ? "cancelled" : "success", model: loadedModel, audioFile: audioFile,
+                status: Task.isCancelled ? "cancelled" : "success", model: lease.model, audioFile: audioFile,
                 segments: results.flatMap { $0.segments.map {
                     .init(text: $0.text, start: $0.start, end: $0.end)
                 } }
@@ -298,11 +336,11 @@ actor Transcriber {
                 trace.record(.inferenceFinished, at: inferenceFinishedAt,
                              status: Task.isCancelled ? .cancelled : .success, fields: outputFields)
             }
-            await transcriptionGate.release()
+            await gate.release()
         } catch {
             trace?.record(.inferenceFinished, status: Task.isCancelled || error is CancellationError ? .cancelled : .failed,
                           fields: DictationTrace.runtimeFields())
-            await transcriptionGate.release()
+            await gate.release()
             throw error
         }
         if text.isEmpty || isHallucination {
@@ -317,6 +355,7 @@ actor Transcriber {
         // Preserve the distinction from an unexplained empty recognition result.
         // Retrying a result we already filtered as non-speech repeats the delay.
         if isHallucination { throw TranscriberError.noSpeech }
+        try Task.checkCancellation()
         return text
     }
 
@@ -326,28 +365,81 @@ actor Transcriber {
         guard whisperKit != nil else { throw TranscriberError.notLoaded }
         let trace = DictationTrace.current
         trace?.record(.engineWaitStarted)
-        await transcriptionGate.acquire()
-        trace?.record(.engineAcquired, model: loadedModel)
-        guard let whisperKit else {
-            await transcriptionGate.release()
-            throw TranscriberError.notLoaded
-        }
-        let options = currentDecodingOptions()
+        let lease = try await acquireEngine(lowEnergy: false)
+        let gate = lease.gate
+        let whisperKit = lease.engine
+        let options = lease.options
+        trace?.record(.engineAcquired, model: lease.model)
         let results: [TranscriptionResult]
         do {
             trace?.record(.inferenceStarted)
-            results = try await whisperKit.transcribe(
-                audioPath: path,
-                decodeOptions: options
-            )
-            trace?.record(.inferenceFinished, status: Task.isCancelled ? .cancelled : .success)
-            await transcriptionGate.release()
+            results = try await runInference(generation: lease.generation) {
+                try await whisperKit.transcribe(audioPath: path, decodeOptions: options)
+            }
+            try Task.checkCancellation()
+            trace?.record(.inferenceFinished, status: .success)
+            await gate.release()
         } catch {
             trace?.record(.inferenceFinished, status: Task.isCancelled || error is CancellationError ? .cancelled : .failed)
-            await transcriptionGate.release()
+            await gate.release()
             throw error
         }
+        try Task.checkCancellation()
         return Self.finalize(results)
+    }
+
+    private func acquireEngine(lowEnergy: Bool) async throws -> (
+        gate: TranscriptionGate, engine: WhisperKit, options: DecodingOptions,
+        generation: Int, model: String?
+    ) {
+        while true {
+            let gate = transcriptionGate
+            try await gate.acquire()
+            if Task.isCancelled {
+                await gate.release()
+                throw CancellationError()
+            }
+            if gate === transcriptionGate, let whisperKit {
+                // Snapshot everything before returning across another await.
+                return (gate, whisperKit, currentDecodingOptions(lowEnergy: lowEnergy), engineGeneration, loadedModel)
+            }
+            await gate.release()
+            guard whisperKit != nil else { throw TranscriberError.notLoaded }
+            // A normal model switch leaves queued requests eligible to use
+            // the replacement engine with its own gate and vocabulary.
+        }
+    }
+
+    private func runInference(
+        generation: Int,
+        _ infer: () async throws -> [TranscriptionResult]
+    ) async throws -> [TranscriptionResult] {
+        try Task.checkCancellation()
+        activeEngineGenerations.insert(generation)
+        defer {
+            activeEngineGenerations.remove(generation)
+            quarantinedEngineGenerations.remove(generation)
+        }
+        return try await withTaskCancellationHandler {
+            let result = try await infer()
+            try Task.checkCancellation()
+            return result
+        } onCancel: {
+            Task { await self.quarantineEngine(generation: generation) }
+        }
+    }
+
+    private func quarantineEngine(generation: Int) {
+        guard activeEngineGenerations.contains(generation) else { return }
+        quarantinedEngineGenerations.insert(generation)
+        guard generation == engineGeneration else { return }
+        whisperKit = nil
+        loadedModel = nil
+        vocabularyTokens = nil
+        // The old call owns its old gate until inference actually returns.
+        // Only a new model instance may use this replacement gate.
+        transcriptionGate = TranscriptionGate()
+        engineGeneration += 1
     }
 
     private static let decodingOptions: DecodingOptions = {
@@ -456,8 +548,12 @@ actor Transcriber {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static let specialTokenRegex = try! NSRegularExpression(
-        pattern: #"\[[A-Z_ ]+\]|(?i:\((?:music|laughs|laughter|applause|noise|silence|inaudible|coughs)\))|<[^>]*>"#
-    )
+    private static let specialTokenRegex: NSRegularExpression = {
+        let languages = Constants.languages.values
+            .map(NSRegularExpression.escapedPattern(for:)).sorted().joined(separator: "|")
+        return try! NSRegularExpression(
+            pattern: #"(?i:\[(?:blank_audio|music|laughs|laughter|applause|noise|silence|inaudible|coughs)\]|\((?:music|laughs|laughter|applause|noise|silence|inaudible|coughs)\))|<\|(?:endoftext|startoftranscript|startofprev|startoflm|transcribe|translate|notimestamps|nospeech|nocaptions|\#(languages)|[0-9]+\.[0-9]{2})\|>"#
+        )
+    }()
     private static let repeatedSpacesRegex = try! NSRegularExpression(pattern: " {2,}")
 }

@@ -221,12 +221,124 @@ final class LocalTextModelPolicyTests: XCTestCase {
         _ = try await policy.command(
             system: "Shorten the text.",
             prompt: "A long passage",
-            model: "s1-mini",
+            model: "qwen3:4b",
             reasoning: .off,
             fallback: "A long passage"
         )
 
         XCTAssertEqual(ollama.commandRequests.first?.model, "gemma3:4b")
+    }
+
+    func testCommandPrefersTheInstalledConfiguredInstructModel() async throws {
+        let apple = AppleBackendSpy(isAvailable: false)
+        let ollama = OllamaBackendSpy()
+        ollama.installedModelsResults = [.success(["s1-mini", "gemma3:4b", "qwen3:4b"])]
+        ollama.commandResults = [.success(.init(text: "Rewritten.", finishReason: .complete))]
+        let policy = LocalTextModelPolicy(apple: apple, ollama: ollama)
+
+        let result = try await policy.command(
+            system: "Rewrite", prompt: "Text", model: "qwen3:4b", reasoning: .off, fallback: "Text"
+        )
+
+        XCTAssertEqual(result, "Rewritten.")
+        XCTAssertEqual(ollama.commandRequests.first?.model, "qwen3:4b")
+    }
+
+    func testCommandFailsWithoutGeneratingWhenNoUsableFallbackIsInstalled() async {
+        for models in [[], ["s1-mini"], ["unrelated-model", "s1-mini"]] {
+            let apple = AppleBackendSpy(isAvailable: false)
+            let ollama = OllamaBackendSpy()
+            ollama.installedModelsResults = [.success(models)]
+            let policy = LocalTextModelPolicy(apple: apple, ollama: ollama)
+
+            do {
+                _ = try await policy.command(
+                    system: "Rewrite", prompt: "Text", model: "gemma3:4b", reasoning: .off, fallback: "Text"
+                )
+                XCTFail("Installed models \(models) cannot satisfy this command request")
+            } catch {
+                XCTAssertEqual(
+                    error as? LocalTextModelPolicy.CommandModelError,
+                    .noUsableModel(configured: "gemma3:4b")
+                )
+                XCTAssertTrue(error.localizedDescription.contains("ollama pull gemma3:4b"))
+            }
+            XCTAssertTrue(ollama.commandRequests.isEmpty)
+            XCTAssertEqual(policy.ollamaReachability, .reachable)
+        }
+    }
+
+    func testCommandRejectsAnExplicitlyConfiguredTranscriptNormalizer() async {
+        for model in ["s1-mini", "superwhisper/S1-MINI:latest"] {
+            let apple = AppleBackendSpy(isAvailable: false)
+            let ollama = OllamaBackendSpy()
+            ollama.installedModelsResults = [.success([model])]
+            let policy = LocalTextModelPolicy(apple: apple, ollama: ollama)
+
+            do {
+                _ = try await policy.command(
+                    system: "Rewrite", prompt: "Text", model: model, reasoning: .off, fallback: "Text"
+                )
+                XCTFail("A transcript normalizer must never receive command instructions")
+            } catch {
+                XCTAssertEqual(
+                    error as? LocalTextModelPolicy.CommandModelError,
+                    .noUsableModel(configured: model)
+                )
+            }
+            XCTAssertTrue(ollama.commandRequests.isEmpty)
+        }
+    }
+
+    func testCommandUsesGemmaInsteadOfAnInstalledConfiguredTranscriptNormalizer() async throws {
+        let apple = AppleBackendSpy(isAvailable: false)
+        let ollama = OllamaBackendSpy()
+        ollama.installedModelsResults = [.success(["s1-mini", "gemma3:4b"])]
+        ollama.commandResults = [.success(.init(text: "Rewritten.", finishReason: .complete))]
+        let policy = LocalTextModelPolicy(apple: apple, ollama: ollama)
+
+        _ = try await policy.command(
+            system: "Rewrite", prompt: "Text", model: "s1-mini", reasoning: .off, fallback: "Text"
+        )
+
+        XCTAssertEqual(ollama.commandRequests.first?.model, "gemma3:4b")
+    }
+
+    func testCommandDiscoveryCancellationPropagatesWithoutGenerating() async {
+        let apple = AppleBackendSpy(isAvailable: false)
+        let ollama = OllamaBackendSpy()
+        ollama.installedModelsResults = [.failure(URLError(.cancelled))]
+        let policy = LocalTextModelPolicy(apple: apple, ollama: ollama)
+
+        do {
+            _ = try await policy.command(
+                system: "Rewrite", prompt: "Text", model: "gemma3:4b", reasoning: .off, fallback: "Text"
+            )
+            XCTFail("Model discovery cancellation must propagate")
+        } catch is CancellationError {
+            XCTAssertEqual(policy.ollamaReachability, .unknown)
+        } catch {
+            XCTFail("Expected cancellation, got \(error)")
+        }
+        XCTAssertTrue(ollama.commandRequests.isEmpty)
+    }
+
+    func testCommandDiscoveryTransportFailureIsReportedAsUnavailable() async {
+        let apple = AppleBackendSpy(isAvailable: false)
+        let ollama = OllamaBackendSpy()
+        ollama.installedModelsResults = [.failure(URLError(.cannotConnectToHost))]
+        let policy = LocalTextModelPolicy(apple: apple, ollama: ollama)
+
+        do {
+            _ = try await policy.command(
+                system: "Rewrite", prompt: "Text", model: "gemma3:4b", reasoning: .off, fallback: "Text"
+            )
+            XCTFail("Failed model discovery must be reported")
+        } catch {
+            XCTAssertTrue(error is CommandMode.CommandError)
+        }
+        XCTAssertTrue(ollama.commandRequests.isEmpty)
+        XCTAssertEqual(policy.ollamaReachability, .unreachable)
     }
 
     func testEmptyOrLengthLimitedCommandKeepsTheFallbackText() async throws {
@@ -572,7 +684,7 @@ private final class OllamaBackendSpy: OllamaTextModelBackend {
 
     var cleanupResults: [Result<TextModelGeneration, Error>] = []
     var commandResults: [Result<TextModelGeneration, Error>] = []
-    var installedModelsResults: [Result<[String], Error>] = [.success([])]
+    var installedModelsResults: [Result<[String], Error>] = [.success(["s1-mini", "gemma3:4b"])]
     var cleanupHandler: ((CleanupRequest) async throws -> TextModelGeneration)?
     var prewarmHandler: ((String) async -> Void)?
     private(set) var cleanupRequests: [CleanupRequest] = []
@@ -612,7 +724,7 @@ private final class OllamaBackendSpy: OllamaTextModelBackend {
     }
 
     func installedModels() async throws -> [String] {
-        guard !installedModelsResults.isEmpty else { return [] }
+        guard !installedModelsResults.isEmpty else { return ["s1-mini", "gemma3:4b"] }
         return try installedModelsResults.removeFirst().get()
     }
 }

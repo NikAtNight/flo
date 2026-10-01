@@ -238,6 +238,10 @@ private final class PolicyOllamaBackendSpy: OllamaTextModelBackend {
     func prewarm(model: String) async {
         prewarmModels.append(model)
     }
+
+    func installedModels() async throws -> [String] {
+        ["gemma3:4b"]
+    }
 }
 
 @MainActor

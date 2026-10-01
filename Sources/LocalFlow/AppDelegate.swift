@@ -163,6 +163,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // transcription can error — neither should ever lose the user's words.
     private var recentTranscripts: [RecentDictation] = []
     private var commandTasks: [Int: Task<Void, Never>] = [:]
+    private var retryingDictations = false
     private var commandHudGenerations: [Int: Int] = [:]
 
     private let updates = UpdateController()
@@ -882,6 +883,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func commandKeyPressed() {
         guard modelLoaded, !isRecording else { return }
+        TextInjector.prepareSelectionAccess()
         let model = Settings.ollamaCommandModel
         Task { await textModelPolicy.prewarm(model: model) }
         recordingIsCommand = true
@@ -898,8 +900,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// queue as dictations so results never overtake each other.
     private func runCommand(instruction: String, seq: Int, hudGeneration: Int?) {
         guard dictationDelivery.isCommandPending(seq) else { return }
-        TextInjector.copySelection { [weak self] selection in
+        TextInjector.copySelection { [weak self] selectionResult in
             guard let self, self.dictationDelivery.isCommandPending(seq) else { return }
+            let selection: String?
+            switch selectionResult {
+            case .success(let text):
+                selection = text
+            case .failure(let error):
+                self.completeCommand(seq, with: .skip)
+                self.dismissHud(hudGeneration)
+                self.playCue("Basso")
+                self.state = .failed(UserFacingIssue(
+                    summary: "Couldn't read selected text",
+                    details: error.localizedDescription
+                ))
+                self.scheduleFailureRecovery()
+                return
+            }
             let task = Task {
                 defer { self.mirrorOllamaReachability() }
                 do {
@@ -1120,7 +1137,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         commandTasks.removeValue(forKey: sequence)?.cancel()
         let hudGeneration = commandHudGenerations.removeValue(forKey: sequence)
         dismissHud(hudGeneration)
-        DiagLog.log("command #%d stalled; cancelled to unblock later output", sequence)
+        DiagLog.log("command #%d timed out; cancelled", sequence)
+        playCue("Basso")
+        state = .failed(UserFacingIssue(
+            summary: "Voice command timed out",
+            details: "The voice edit was cancelled. Try again. If speech recognition stopped responding, switch Whisper models or restart LocalFlow."
+        ))
+        scheduleFailureRecovery()
     }
 
     private func injectCompletedText(_ text: String, completion: @escaping () -> Void) {
@@ -1363,11 +1386,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func retryFailedDictation() {
-        dictationDelivery.retryFailedDictations {
-            let context = captureDictationContext()
-            let trace = Settings.saveDiagnosticRecordings ? DictationTrace() : nil
-            return .init(context: context, trace: trace,
-                         diagnostics: diagnosticRecording(context: context, trace: trace))
+        guard !retryingDictations, modelPreparationStartedAt == nil else { return }
+        retryingDictations = true
+        Task {
+            defer { retryingDictations = false }
+            if !(await transcriber.isLoaded) {
+                modelLoadGeneration += 1
+                let generation = modelLoadGeneration
+                let model = Settings.whisperModel
+                modelLoaded = false
+                beginModelPreparation()
+                state = .loadingModel
+                do {
+                    try await StartupModelSequence.run(
+                        loadWhisper: { try await self.transcriber.load(model: model) },
+                        prewarmCleanup: {}
+                    )
+                    let loaded = await transcriber.isLoaded
+                    guard generation == modelLoadGeneration else { return }
+                    guard loaded else { throw Transcriber.TranscriberError.notLoaded }
+                    modelLoaded = true
+                    endModelPreparation()
+                    recomputeReadyState()
+                } catch {
+                    guard generation == modelLoadGeneration else { return }
+                    endModelPreparation()
+                    state = .failed(UserFacingIssue(
+                        summary: "Couldn't retry dictation",
+                        details: "\(error.localizedDescription) The audio is still kept in memory. Try Retry Dictation again before quitting."
+                    ))
+                    return
+                }
+            }
+            dictationDelivery.retryFailedDictations {
+                let context = captureDictationContext()
+                let trace = Settings.saveDiagnosticRecordings ? DictationTrace() : nil
+                return .init(context: context, trace: trace,
+                             diagnostics: diagnosticRecording(context: context, trace: trace))
+            }
         }
     }
 

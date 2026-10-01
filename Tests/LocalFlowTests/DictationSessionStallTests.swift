@@ -1,4 +1,5 @@
 import XCTest
+import WhisperKit
 @testable import LocalFlow
 
 @MainActor
@@ -30,7 +31,7 @@ final class DictationSessionStallTests: XCTestCase {
                 outcomes.append(outcome)
                 delivered.fulfill()
             },
-            stalledGenerationTimeout: 0
+            stalledGenerationTimeout: 0.04
         )
         defer {
             pipeline.cancel(generation: hungGeneration)
@@ -59,7 +60,7 @@ final class DictationSessionStallTests: XCTestCase {
         XCTAssertEqual(outcomes, [
             .failed(
                 generation: hungGeneration,
-                message: "Transcription timed out while a later dictation was waiting."
+                message: "Transcription timed out after recording ended."
             ),
             .finalTranscript(generation: laterGeneration, text: "later transcript")
         ])
@@ -72,7 +73,7 @@ final class DictationSessionStallTests: XCTestCase {
         }
         let outcome = events.first { $0.stage == "outcome" }
         XCTAssertEqual(outcome?.status, "failed")
-        XCTAssertEqual(outcome?.text, "Transcription timed out while a later dictation was waiting.")
+        XCTAssertEqual(outcome?.text, "Transcription timed out after recording ended.")
     }
 
     func testLaterCompletionDoesNotRestartArmedStallDeadline() async {
@@ -127,7 +128,7 @@ final class DictationSessionStallTests: XCTestCase {
         XCTAssertTrue(firstLaterCompleted)
         await settleAsyncWork()
 
-        // The first later result arms a 400 ms deadline for the hung head.
+        // Releasing the hung head starts its 400 ms deadline.
         // Complete another queued result 250 ms into that same interval.
         try? await Task.sleep(nanoseconds: 250_000_000)
         pipeline.begin(generation: secondLaterGeneration, context: context)
@@ -149,11 +150,196 @@ final class DictationSessionStallTests: XCTestCase {
         XCTAssertEqual(outcomes, [
             .failed(
                 generation: hungGeneration,
-                message: "Transcription timed out while a later dictation was waiting."
+                message: "Transcription timed out after recording ended."
             ),
             .finalTranscript(generation: firstLaterGeneration, text: "later transcript"),
             .finalTranscript(generation: secondLaterGeneration, text: "later transcript")
         ])
+    }
+
+    func testNoncooperativeInferenceAloneRetainsAudioThenReloadedRetrySucceeds() async throws {
+        try await verifyNoncooperativeInference(dictations: 1)
+    }
+
+    func testNoncooperativeInferenceWithRealGateFailsQueuedDictationsWithoutFollowerResult() async throws {
+        try await verifyNoncooperativeInference(dictations: 2)
+    }
+
+    func testRecordingHasNoDeadlineUntilRelease() async {
+        let inference = StallCaseTranscriber(hungGeneration: 101, completedText: "")
+        var outcomes: [DictationSessionOutcome] = []
+        let pipeline = DictationSessionPipeline(
+            transcribe: { try await inference.transcribe($0) },
+            cleanup: { .init(text: $0.text, succeeded: true) },
+            onOutcome: { outcomes.append($0) },
+            stalledGenerationTimeout: 0.02
+        )
+        pipeline.begin(generation: 101, context: context)
+        pipeline.processIncrementalChunk(generation: 101, samples: speech, pauseSecondsAfterChunk: 0)
+        let started = await waitForCall(generation: 101, in: inference)
+        XCTAssertTrue(started)
+        try? await Task.sleep(nanoseconds: 60_000_000)
+        XCTAssertTrue(outcomes.isEmpty)
+        pipeline.release(generation: 101, fullSamples: speech)
+        for _ in 0..<100 where outcomes.isEmpty { try? await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(outcomes, [.failed(generation: 101, message: "Transcription timed out after recording ended.")])
+    }
+
+    private func verifyNoncooperativeInference(dictations: Int) async throws {
+        let blocked = NoncooperativeInference()
+        let old = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        old.inference = { await blocked.run() }
+        let replacement = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        replacement.inference = { syntheticResult("recovered words") }
+        var loadCount = 0
+        let transcriber = Transcriber(modelLoader: { _, _ in
+            loadCount += 1
+            return loadCount == 1 ? old : replacement
+        })
+        try await transcriber.load(model: "test")
+        var outcomes: [DictationSessionOutcome] = []
+        var pasted: [String] = []
+        var history: [String] = []
+        let delivery = DictationDelivery(
+            transcribe: { try await transcriber.transcribe(samples: $0.samples) },
+            cleanup: { .init(text: $0.text, succeeded: true) },
+            inject: { text, complete in pasted.append(text); complete() },
+            recordTranscript: { history.append($0) },
+            onOutcome: { outcome, _ in outcomes.append(outcome) },
+            onCancelled: { _ in XCTFail("A deadline must retain the failed recording") },
+            onCommandCancelled: { _ in },
+            onProcessingCountChange: { _ in },
+            stallTimeout: 0.08, injectionInterval: 0
+        )
+        for _ in 0..<dictations {
+            let generation = delivery.begin(.init(context: context))
+            delivery.release(generation: generation, samples: speech)
+        }
+        for _ in 0..<200 {
+            if outcomes.count == dictations, !(await transcriber.isLoaded) { break }
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTAssertEqual(outcomes.count, dictations)
+        XCTAssertTrue(outcomes.allSatisfy { if case .failed = $0 { return true }; return false })
+        XCTAssertEqual(delivery.retryCount, dictations)
+        XCTAssertFalse(delivery.isBusy, "Quit must unblock without the model returning")
+        let oldCalls = await blocked.calls
+        XCTAssertEqual(oldCalls, 1, "Queued cancelled requests must never start inference")
+        XCTAssertTrue(pasted.isEmpty)
+        XCTAssertTrue(history.isEmpty)
+
+        try await transcriber.load(model: "test")
+        XCTAssertEqual(loadCount, 2)
+        delivery.retryFailedDictations { .init(context: self.context) }
+        for _ in 0..<200 where pasted.count < dictations { try? await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(pasted, Array(repeating: "recovered words", count: dictations))
+        XCTAssertEqual(history, pasted)
+        XCTAssertFalse(delivery.isBusy)
+        await blocked.finish()
+        await settleAsyncWork()
+        XCTAssertEqual(outcomes.count, dictations * 2)
+        XCTAssertEqual(history.count, dictations, "The abandoned model's late result must be ignored")
+        XCTAssertEqual(delivery.retryCount, 0)
+        let callsAfterLateResult = await blocked.calls
+        XCTAssertEqual(callsAfterLateResult, 1)
+    }
+
+    func testQueuedRequestUsesReplacementAfterOrdinaryModelSwitch() async throws {
+        let blocked = NoncooperativeInference()
+        let old = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        old.inference = { await blocked.run() }
+        let replacement = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        replacement.inference = { syntheticResult("new model") }
+        let transcriber = Transcriber(modelLoader: { name, _ in name == "old" ? old : replacement })
+        try await transcriber.load(model: "old")
+        let active = Task { try await transcriber.transcribe(samples: speech) }
+        for _ in 0..<200 {
+            if await blocked.calls == 1 { break }
+            await Task.yield()
+        }
+        let queued = Task { try await transcriber.transcribe(samples: speech) }
+        await settleAsyncWork()
+        let callsBeforeSwitch = await blocked.calls
+        XCTAssertEqual(callsBeforeSwitch, 1)
+        try await transcriber.load(model: "new")
+        await blocked.finish()
+        let activeText = try await active.value
+        let queuedText = try await queued.value
+        XCTAssertEqual(activeText, "late abandoned words")
+        XCTAssertEqual(queuedText, "new model")
+    }
+
+    func testCancellingOldInferenceAfterModelSwitchKeepsReplacementUsable() async throws {
+        let blocked = NoncooperativeInference()
+        let old = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        old.inference = { await blocked.run() }
+        let replacement = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        replacement.inference = { syntheticResult("new model") }
+        let transcriber = Transcriber(modelLoader: { name, _ in name == "old" ? old : replacement })
+        try await transcriber.load(model: "old")
+        let active = Task { try await transcriber.transcribe(samples: speech) }
+        for _ in 0..<200 {
+            if await blocked.calls == 1 { break }
+            await Task.yield()
+        }
+        try await transcriber.load(model: "new")
+        active.cancel()
+        await settleAsyncWork()
+        let loaded = await transcriber.isLoaded
+        XCTAssertTrue(loaded)
+        let nextText = try await transcriber.transcribe(samples: speech)
+        XCTAssertEqual(nextText, "new model")
+        await blocked.finish()
+        do { _ = try await active.value; XCTFail("Cancelled old model must not return text") }
+        catch is CancellationError {} catch { XCTFail("Unexpected error: \(error)") }
+    }
+
+    func testRecoveryCapsQuarantinedEnginesUntilOldInferenceReturns() async throws {
+        let firstBlocked = NoncooperativeInference()
+        let secondBlocked = NoncooperativeInference()
+        let first = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        first.inference = { await firstBlocked.run() }
+        let second = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        second.inference = { await secondBlocked.run() }
+        var loads = 0
+        let transcriber = Transcriber(modelLoader: { _, _ in
+            loads += 1
+            return loads == 1 ? first : second
+        })
+        try await transcriber.load(model: "test")
+        let firstTask = Task { try await transcriber.transcribe(samples: speech) }
+        for _ in 0..<200 {
+            if await firstBlocked.calls == 1 { break }
+            await Task.yield()
+        }
+        firstTask.cancel()
+        for _ in 0..<200 {
+            if !(await transcriber.isLoaded) { break }
+            await Task.yield()
+        }
+        try await transcriber.load(model: "test")
+        let secondTask = Task { try await transcriber.transcribe(samples: speech) }
+        for _ in 0..<200 {
+            if await secondBlocked.calls == 1 { break }
+            await Task.yield()
+        }
+        secondTask.cancel()
+        for _ in 0..<200 {
+            if !(await transcriber.isLoaded) { break }
+            await Task.yield()
+        }
+        do {
+            try await transcriber.load(model: "test")
+            XCTFail("Repeated recovery must not build unbounded model engines")
+        } catch Transcriber.TranscriberError.recoveryBusy {} catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertEqual(loads, 2)
+        await firstBlocked.finish()
+        _ = try? await firstTask.value
+        // Once an old call returns, another explicit load is allowed.
+        try await transcriber.load(model: "test")
+        XCTAssertEqual(loads, 3)
+        await secondBlocked.finish()
+        _ = try? await secondTask.value
     }
 
     private var speech: [Float] {
@@ -229,4 +415,35 @@ private actor StallCaseTranscriber {
             cancellationRequested.insert(generation)
         }
     }
+}
+
+private final class SyntheticWhisperKit: WhisperKit {
+    var inference: (() async throws -> [TranscriptionResult])?
+
+    override func transcribe(
+        audioArray: [Float], decodeOptions: DecodingOptions? = nil,
+        callback: TranscriptionCallback? = nil, segmentCallback: SegmentDiscoveryCallback? = nil
+    ) async throws -> [TranscriptionResult] {
+        try await inference?() ?? []
+    }
+}
+
+private actor NoncooperativeInference {
+    private(set) var calls = 0
+    private var pending: CheckedContinuation<[TranscriptionResult], Never>?
+
+    func run() async -> [TranscriptionResult] {
+        calls += 1
+        return await withCheckedContinuation { pending = $0 }
+    }
+
+    func finish() {
+        pending?.resume(returning: syntheticResult("late abandoned words"))
+        pending = nil
+    }
+}
+
+private func syntheticResult(_ text: String) -> [TranscriptionResult] {
+    [.init(text: text, segments: [.init(start: 0, end: 1, text: text)],
+           language: "en", timings: .init())]
 }

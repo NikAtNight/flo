@@ -55,6 +55,17 @@ enum OllamaReachability: Equatable {
 /// main actor because menu availability reads it synchronously.
 @MainActor
 final class LocalTextModelPolicy {
+    enum CommandModelError: Error, LocalizedError, Equatable {
+        case noUsableModel(configured: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .noUsableModel(let model):
+                return "Command mode needs an installed instruct model. \"\(model)\" cannot be used. Install gemma3:4b with \"ollama pull gemma3:4b\", or select an installed instruct model in Settings > Command mode."
+            }
+        }
+    }
+
     static let shared = LocalTextModelPolicy(
         apple: AppleIntelligenceTextModelBackend(),
         ollama: OllamaLocalTextModelBackend()
@@ -164,6 +175,8 @@ final class LocalTextModelPolicy {
             ) ?? fallback
         } catch is CancellationError {
             throw CancellationError()
+        } catch let error as CommandModelError {
+            throw error
         } catch {
             throw CommandMode.CommandError.unavailable
         }
@@ -201,7 +214,7 @@ final class LocalTextModelPolicy {
         model: String,
         reasoning: ReasoningLevel
     ) async throws -> String? {
-        let resolvedModel = await resolvedOllamaModel(model)
+        let resolvedModel = try await resolvedOllamaCommandModel(model)
         let generation: TextModelGeneration
         do {
             generation = try await ollama.command(
@@ -216,6 +229,30 @@ final class LocalTextModelPolicy {
             try handleOllamaFailure(error)
         }
         return validatedCommand(generation)
+    }
+
+    private func resolvedOllamaCommandModel(_ configuredModel: String) async throws -> String {
+        let trace = DictationTrace.current
+        trace?.record(.ollamaDiscoveryStarted, model: configuredModel)
+        let models: [String]
+        do {
+            models = try await ollama.installedModels()
+            try Task.checkCancellation()
+            ollamaReachability = .reachable
+            trace?.record(.ollamaDiscoveryFinished, status: .success)
+        } catch {
+            trace?.record(.ollamaDiscoveryFinished, status: isCancellation(error) || Task.isCancelled ? .cancelled : .failed)
+            try handleOllamaFailure(error)
+        }
+
+        if models.contains(configuredModel), !S1MiniCleanup.matches(model: configuredModel) {
+            return configuredModel
+        }
+        guard models.contains("gemma3:4b") else {
+            throw CommandModelError.noUsableModel(configured: configuredModel)
+        }
+        DiagLog.log("configured Ollama command model %@ cannot be used; using gemma3:4b", configuredModel)
+        return "gemma3:4b"
     }
 
     private func resolvedOllamaModel(_ configuredModel: String) async -> String {

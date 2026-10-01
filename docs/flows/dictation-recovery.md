@@ -150,6 +150,89 @@ The domain names are recorded in [CONTEXT.md](../../CONTEXT.md). Audio admission
 uses trimmed analysis windows; empty-result retry and tail fallback retain their
 original-window rules. A regression test covers the half-frame alignment case.
 
+## Review fixes, September 30, 2026
+
+Owner: LocalFlow maintainers. The user requested fixes for six reproduced
+review findings on base `a353f358d5c540c66575f7193dedd1176dec78d9`.
+
+Each released dictation starts its own 90-second processing deadline. It does
+not need a completed follower to time out, and recording time is excluded.
+Timeout emits a recoverable failure, retains original retry audio, and removes
+the delivery busy state. Commands have independent 90-second deadlines from
+processing start. Late results cannot inject text, record history, or restore
+retry entries. Metadata traces can still report when cancelled work returns.
+
+`TranscriptionGate` removes cancelled waiters without releasing the active
+engine's permit. If active inference ignores cancellation, Transcriber isolates
+its engine and keeps its original gate held until inference actually returns.
+Manual Retry loads a fresh engine before draining retained recordings, using
+the existing model-load deadline. Reload failure preserves the recordings.
+At most two abandoned engine generations may remain outstanding; further reload
+attempts report a retry-later error until one returns. A normal model switch
+continues to serve queued requests through the replacement engine and gate.
+
+Command selection reads Accessibility selected text, removing the competing
+clipboard save/restore path. Unsupported selection access reports a failure;
+empty selection in a supported field permits generation. Marker filtering now
+removes known Whisper and non-speech labels while preserving `Array<String>`,
+HTML tags, `[API]`, and other ordinary bracketed text.
+
+The `--transcribe` CLI keeps the main run loop available for MainActor cleanup.
+`Tests/TranscribeCLITests.py` compiles the actual entry point with inert backends
+and checks cleanup, no-cleanup, saved cleanup disabled, raw fallback, and error
+exit statuses in bounded child processes. CI runs this check alongside Swift
+tests. The original semaphore version reproduced the cleanup deadlock with
+the same backends before the fix.
+
+Verification uses synthetic recognition, isolated settings, temporary disk
+folders, and injected selection attributes. Live microphone capture, real model
+inference, and insertion into target apps remain separate runtime checks.
+
+Final verification passed:
+
+- `swift test --disable-automatic-resolution`: 317 tests, zero failures.
+- `swift test -c release --disable-automatic-resolution`: 317 tests, zero
+  failures, including compilation of the changed application.
+- `python3 -B Tests/TranscribeCLITests.py`: two tests covering six CLI cases;
+  idle and startup-readiness checks: ten tests.
+- `bash Tests/ReleaseContractTests.sh`: 63 checks; `git diff --check`.
+
+An initial full run caught missing cancellation-return metadata; the repair
+preserves the existing trace contract and passed both final suites. Logs are
+`final-debug-tests.log`, `final-release-tests.log`, and `release-contract.log`
+under `/tmp/localflow-fixes.N7UJy9`. No app installation or personal data
+modification was performed.
+
+### Live selection follow-up
+
+The user confirmed ordinary dictation preserved their clipboard and command
+editing worked in iMessage. T3 Code initially reported unreadable selection.
+Read-only inspection found its `AXManualAccessibility` flag disabled and the
+system-wide focused-application query failing. Enabling the documented Electron
+flag made its focused `AXTextArea` and selected-text attribute readable through
+the application-specific interface. No text contents were exported.
+
+`TextInjector.prepareSelectionAccess` now requests this tree at command-key
+press, allowing Electron to construct it while the instruction is recorded.
+Selection reading obtains the frontmost application from NSWorkspace, then
+reads its focused element directly. Native apps without the Electron attribute
+and trees already enabled are left alone. Neither path uses the clipboard.
+See [Electron's Accessibility documentation](https://www.electronjs.org/docs/latest/tutorial/accessibility).
+
+The focused 11-test TextInjector suite passed. Tests cover disabled and enabled
+trees, unsupported attributes, preparation failure, missing focus, and the
+existing clipboard-free selection behavior. Direct inspection read T3's focused
+field successfully. A standalone extracted-source harness could not read it
+after focus moved to another app; first-command behavior remains a user check.
+
+PASS: the complete release suite, 320 tests; `git diff --check`; local installation,
+signature verification, and model readiness in 0.89 seconds. Evidence is
+`t3-selection-full-release.log` and `t3-selection-install.log` under
+`/tmp/localflow-fixes.N7UJy9`. The running local build was replaced after a clean
+quit and its previous bundle was retained. T3's tree flag was reset to its
+original disabled state for the user's first-command retest. That retest remains
+NOT RUN until the user confirms the selected text is edited successfully.
+
 
 ## Acceptance and verification
 

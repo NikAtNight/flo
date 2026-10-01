@@ -29,6 +29,7 @@ struct SnippetPair: Identifiable, Equatable {
 @MainActor
 final class SettingsModel: ObservableObject {
     private let settingsApplication: SettingsApplication
+    private let historyWriter: DictationHistoryWriter
     private var isSynchronizingApplicationValues = false
 
     @Published var theme: HudTheme = HudTheme.current {
@@ -215,9 +216,30 @@ final class SettingsModel: ObservableObject {
     @Published var recentDictations: [RecentDictation] = []
     @Published var lastIssue: UserFacingIssue?
 
-    init(settingsApplication: SettingsApplication) {
+    @Published private(set) var deletingHistory = false
+
+    init(
+        settingsApplication: SettingsApplication,
+        historyWriter: DictationHistoryWriter = DictationHistory.writer
+    ) {
         self.settingsApplication = settingsApplication
+        self.historyWriter = historyWriter
         synchronizeApplicationValues()
+    }
+
+    func deleteHistory() {
+        guard !deletingHistory else { return }
+        deletingHistory = true
+        historyWriter.deleteAll { [weak self] result in
+            guard let self else { return }
+            self.deletingHistory = false
+            if case .failure(let error) = result {
+                self.lastIssue = UserFacingIssue(
+                    summary: "Couldn't delete dictation history",
+                    details: "Some saved dictations may remain. Try again. \(error.localizedDescription)"
+                )
+            }
+        }
     }
 
     /// Menu actions can use this entry point to share validation, persistence,
@@ -862,6 +884,7 @@ struct SettingsView: View {
                     Button("Delete all history…", role: .destructive) {
                         confirmingHistoryDeletion = true
                     }
+                    .disabled(model.deletingHistory)
                 }
             } header: {
                 Text("History")
@@ -876,7 +899,7 @@ struct SettingsView: View {
                 titleVisibility: .visible
             ) {
                 Button("Delete all history", role: .destructive) {
-                    try? DictationHistory.deleteAll()
+                    model.deleteHistory()
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {

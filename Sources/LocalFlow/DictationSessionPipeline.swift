@@ -113,6 +113,7 @@ final class DictationSessionPipeline {
         var completedSampleEnd = 0
         var incrementalFailed = false
         var cancelled = false
+        var releaseTimeout: DispatchWorkItem?
 
         init(generation: Int, context: DictationSessionContext, trace: DictationTrace?, diagnostics: DictationDiagnosticStore.Recording?, personalVoice: PersonalVoiceStore.Recording?) {
             self.generation = generation
@@ -131,8 +132,6 @@ final class DictationSessionPipeline {
     private var generationOrder: [Int] = []
     private var completed: [Int: (outcome: DictationSessionOutcome, trace: DictationTrace?)] = [:]
     private var cancelled: Set<Int> = []
-    private var stallTimer: DispatchWorkItem?
-    private var stalledGeneration: Int?
 
     init(
         transcribe: @escaping Transcribe,
@@ -287,12 +286,14 @@ final class DictationSessionPipeline {
             .completedEnd: Double(session.completedSampleEnd)
         ])
         advance(session)
+        scheduleReleaseTimeout(for: session)
     }
 
     func cancel(generation: Int) {
         let trace = sessions[generation]?.trace ?? completed[generation]?.trace
         trace?.record(.cancellationRequested)
         if let session = sessions.removeValue(forKey: generation) {
+            session.releaseTimeout?.cancel()
             session.diagnostics?.record(.init(stage: "outcome", status: "cancelled"))
             session.personalVoice?.finish(status: "cancelled")
             session.cancelled = true
@@ -487,6 +488,7 @@ final class DictationSessionPipeline {
                     await self.cleanup(request)
                 }
             }
+            guard isCurrent(session) else { return }
             session.diagnostics?.record(.init(stage: "cleanupOutput", text: result.text,
                                               status: result.succeeded ? "success" : "fallback"))
             session.trace?.record(.cleanupFinished, status: Task.isCancelled ? .cancelled : (result.succeeded ? .success : .fallback))
@@ -501,6 +503,8 @@ final class DictationSessionPipeline {
 
     private func complete(_ session: Session, with outcome: DictationSessionOutcome) {
         guard isCurrent(session) else { return }
+        session.releaseTimeout?.cancel()
+        session.releaseTimeout = nil
         let status: DictationTrace.Status
         switch outcome {
         case .finalTranscript: status = .success
@@ -544,30 +548,18 @@ final class DictationSessionPipeline {
         while let generation = generationOrder.first {
             if cancelled.remove(generation) != nil {
                 generationOrder.removeFirst()
-                if stalledGeneration == generation {
-                    cancelStallTimeout()
-                }
                 continue
             }
-            guard let outcome = completed.removeValue(forKey: generation) else {
-                if !completed.isEmpty {
-                    scheduleStallTimeout(for: generation)
-                } else {
-                    cancelStallTimeout()
-                }
-                return
-            }
+            guard let outcome = completed.removeValue(forKey: generation) else { return }
             generationOrder.removeFirst()
-            if stalledGeneration == generation {
-                cancelStallTimeout()
-            }
             outcome.trace?.record(.resultDelivered)
             DictationTrace.$current.withValue(outcome.trace) { onOutcome(outcome.outcome) }
         }
-        cancelStallTimeout()
     }
 
     private func runTranscription(_ request: DictationTranscriptionRequest, session: Session) async throws -> String {
+        try Task.checkCancellation()
+        guard isCurrent(session) else { throw CancellationError() }
         session.diagnostics?.record(.init(stage: "transcriptionRequest", segment: request.segment, sampleCount: request.samples.count))
         session.trace?.record(.transcriptionRequested, fields: [.samples: Double(request.samples.count)], segment: request.segment)
         do {
@@ -576,61 +568,50 @@ final class DictationSessionPipeline {
                     try await transcribe(request)
                 }
             }
-            session.diagnostics?.record(.init(stage: "transcriptionResult", text: text,
-                                              status: Task.isCancelled ? "cancelled" : (text.isEmpty ? "empty" : "success"),
-                                              segment: request.segment))
-            session.trace?.record(.transcriptionFinished, status: Task.isCancelled ? .cancelled : (text.isEmpty ? .empty : .success))
+            let abandoned = Task.isCancelled || !isCurrent(session)
+            session.trace?.record(.transcriptionFinished, status: abandoned ? .cancelled : (text.isEmpty ? .empty : .success))
+            if !abandoned {
+                session.diagnostics?.record(.init(stage: "transcriptionResult", text: text,
+                                                  status: text.isEmpty ? "empty" : "success", segment: request.segment))
+            }
             return text
         } catch Transcriber.TranscriberError.noSpeech {
-            session.diagnostics?.record(.init(stage: "transcriptionResult", text: "",
-                                              status: Task.isCancelled ? "cancelled" : "insufficientVoice",
-                                              segment: request.segment))
-            session.trace?.record(.transcriptionFinished, status: Task.isCancelled ? .cancelled : .insufficientVoice)
+            let abandoned = Task.isCancelled || !isCurrent(session)
+            session.trace?.record(.transcriptionFinished, status: abandoned ? .cancelled : .insufficientVoice)
+            if !abandoned {
+                session.diagnostics?.record(.init(stage: "transcriptionResult", text: "",
+                                                  status: "insufficientVoice", segment: request.segment))
+            }
             throw Transcriber.TranscriberError.noSpeech
         } catch {
-            session.diagnostics?.record(.init(stage: "transcriptionResult", text: error.localizedDescription,
-                                              status: Task.isCancelled ? "cancelled" : "failed", segment: request.segment))
-            session.trace?.record(.transcriptionFinished, status: Task.isCancelled || error is CancellationError ? .cancelled : .failed)
+            let abandoned = Task.isCancelled || !isCurrent(session)
+            session.trace?.record(.transcriptionFinished, status: abandoned || error is CancellationError ? .cancelled : .failed)
+            if !abandoned {
+                session.diagnostics?.record(.init(stage: "transcriptionResult", text: error.localizedDescription,
+                                                  status: "failed", segment: request.segment))
+            }
             throw error
         }
     }
 
-    private func scheduleStallTimeout(for generation: Int) {
-        guard stalledGeneration != generation || stallTimer == nil else { return }
-        cancelStallTimeout()
-        stalledGeneration = generation
-        let work = DispatchWorkItem { [weak self] in
-            guard let self,
-                  self.generationOrder.first == generation,
-                  !self.completed.isEmpty else { return }
-            self.stallTimer = nil
-            self.stalledGeneration = nil
-            let message = "Transcription timed out while a later dictation was waiting."
-            let session = self.sessions.removeValue(forKey: generation)
-            if let session {
-                session.diagnostics?.record(.init(stage: "outcome", text: message, status: "failed"))
-                session.personalVoice?.finish(status: "failed")
-                session.trace?.record(.cancellationRequested)
-                session.cancelled = true
-                session.activeTask?.cancel()
-            }
-            session?.trace?.record(.resultReady, status: .failed)
-            self.completed[generation] = (.failed(
-                generation: generation,
-                message: message
-            ), session?.trace)
-            self.drainCompletedOutcomes()
+    private func scheduleReleaseTimeout(for session: Session) {
+        guard isCurrent(session), session.releaseTimeout == nil else { return }
+        let work = DispatchWorkItem { [weak self, weak session] in
+            guard let self, let session, self.isCurrent(session) else { return }
+            session.releaseTimeout = nil
+            session.trace?.record(.cancellationRequested)
+            session.activeTask?.cancel()
+            session.activeTask = nil
+            session.pendingChunks.removeAll()
+            self.complete(session, with: .failed(
+                generation: session.generation,
+                message: "Transcription timed out after recording ended."
+            ))
         }
-        stallTimer = work
+        session.releaseTimeout = work
         DispatchQueue.main.asyncAfter(
             deadline: .now() + stalledGenerationTimeout,
             execute: work
         )
-    }
-
-    private func cancelStallTimeout() {
-        stallTimer?.cancel()
-        stallTimer = nil
-        stalledGeneration = nil
     }
 }

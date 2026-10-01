@@ -225,6 +225,9 @@ Accessibility, remove LocalFlow with the − button and re-add the new build
     stay in memory for manual retry, oldest first. They are lost when you quit;
     audio stays in memory unless diagnostic recordings or local personal voice
     collection are enabled.
+    Recognition that stalls for 90 seconds after release also becomes a
+    retryable failure. Retry reloads the model if the stalled engine had to
+    be isolated. Late results from that engine are ignored.
   - **Clean up transcripts** — toggle the LLM cleanup pass (Apple
     Intelligence on-device when available, else Ollama — see below).
   - **Sound Cues** — start/finish sounds, plus a low "Basso" when something
@@ -429,6 +432,17 @@ effort are configurable in Settings → Command mode). Either way the text
 being edited never leaves the Mac. Note this is a different model than
 cleanup's s1-mini, which can't follow instructions. Needs a different key
 from dictation.
+
+Selection is read through macOS Accessibility without copying to the clipboard.
+Command mode requests Electron's accessibility tree when the command key is
+pressed, so input fields in apps such as T3 Code can expose selected text.
+Apps that don't expose readable selected text report an error. Empty selection
+in a supported text field still allows generation at the cursor.
+
+Ollama commands use the installed configured model, or installed `gemma3:4b`
+if the configured model is missing or is s1-mini. If neither is suitable,
+LocalFlow asks you to install or select an instruct model. Voice commands time
+out after 90 seconds of processing.
 
 ## App-aware style
 

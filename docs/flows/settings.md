@@ -44,6 +44,28 @@ Updates are enabled only when `UpdateController.isSupported` verifies a
 distribution signature and update feed. Local startup registration remains
 disabled by AppIdentity. History deletion still requires confirmation.
 
+## Review fixes, September 30, 2026
+
+Owner: LocalFlow maintainers. The user requested fixes for six reproduced
+review findings. History deletion now runs on the same serial queue as appends,
+so previously queued writes finish before deletion and cannot restore old
+history afterward. A missing history folder counts as success. New dictations
+submitted after deletion can create new history. The Settings button is disabled
+while deletion is pending, and filesystem failures appear in the issue banner.
+
+`DictationHistoryWriter` owns that queue and folder. Production history and
+Settings share one instance; tests use temporary folders and controlled queues.
+Regression checks cover pending writes, subsequent new records, repeated deletion,
+permission failures, retry, and Settings error reporting.
+
+Command model discovery now accepts the installed configured model unless it is
+s1-mini, then tries installed `gemma3:4b`. It no longer chooses an arbitrary
+installed model. Missing suitable models produce an install/select error before
+generation. Transcript cleanup keeps its existing model selection.
+
+History and model-policy regressions passed in the 317-test debug and release
+suites. See the [combined verification](dictation-recovery.md#review-fixes-september-30-2026).
+
 ## Acceptance checks
 
 - `swift test -c release --disable-automatic-resolution`: settings persistence,
