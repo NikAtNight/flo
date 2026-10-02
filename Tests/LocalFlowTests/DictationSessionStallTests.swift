@@ -243,6 +243,50 @@ final class DictationSessionStallTests: XCTestCase {
         XCTAssertEqual(callsAfterLateResult, 1)
     }
 
+    func testKeyboardCancelLeavesRunningInferenceAndModelLoaded() async throws {
+        let blocked = NoncooperativeInference()
+        let engine = FakeEngine()
+        engine.inference = { await blocked.run() }
+        var loads = 0
+        let transcriber = Transcriber(modelLoader: { _, _ in
+            loads += 1
+            return engine
+        })
+        try await transcriber.load(model: "test")
+        var outcomes: [DictationSessionOutcome] = []
+        let pipeline = DictationSessionPipeline(
+            transcribe: { try await transcriber.transcribe(samples: $0.samples) },
+            cleanup: { .init(text: $0.text, succeeded: true) },
+            onOutcome: { outcomes.append($0) }
+        )
+        pipeline.begin(generation: 120, context: context)
+        pipeline.release(generation: 120, fullSamples: speech)
+        for _ in 0..<200 {
+            if await blocked.calls == 1 { break }
+            await Task.yield()
+        }
+        let callsBeforeCancel = await blocked.calls
+        XCTAssertEqual(callsBeforeCancel, 1)
+
+        pipeline.cancel(generation: 120, interruptInference: false)
+        await settleAsyncWork()
+        let loadedWhileBlocked = await transcriber.isLoaded
+        XCTAssertTrue(loadedWhileBlocked, "Escape must not quarantine the speech model")
+
+        await blocked.finish()
+        await settleAsyncWork()
+        let loadedAfterReturn = await transcriber.isLoaded
+        XCTAssertTrue(loadedAfterReturn)
+        XCTAssertTrue(outcomes.isEmpty, "The abandoned result must be dropped")
+
+        engine.inference = { syntheticResult("next words") }
+        pipeline.begin(generation: 121, context: context)
+        pipeline.release(generation: 121, fullSamples: speech)
+        for _ in 0..<200 where outcomes.isEmpty { try? await Task.sleep(nanoseconds: 5_000_000) }
+        XCTAssertEqual(outcomes, [.finalTranscript(generation: 121, text: "next words")])
+        XCTAssertEqual(loads, 1)
+    }
+
     func testQueuedRequestUsesReplacementAfterOrdinaryModelSwitch() async throws {
         let blocked = NoncooperativeInference()
         let old = FakeEngine()

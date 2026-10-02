@@ -163,6 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // transcription can error — neither should ever lose the user's words.
     private var recentTranscripts: [RecentDictation] = []
     private var commandTasks: [Int: Task<Void, Never>] = [:]
+    /// Commands whose task is still inside speech inference.
+    private var transcribingCommands: Set<Int> = []
     private var retryingDictations = false
     private var commandHudGenerations: [Int: Int] = [:]
 
@@ -466,8 +468,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Drops the held recording without transcribing it. Shared by
-    /// `abortRecording` (sleep, user switch) and the Escape key.
-    private func discardActiveRecording(reason: String) {
+    /// `abortRecording` (sleep, user switch) and the Escape key. Escape
+    /// passes `interruptInference: false` so a routine cancel leaves any
+    /// running chunk inference alone instead of unloading the model.
+    private func discardActiveRecording(reason: String, interruptInference: Bool = true) {
         hotkey.cancelHold()
         commandHotkey.cancelHold()
         recordingIsCommand = false
@@ -476,7 +480,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DiagLog.log("%@ while recording — discarding the recording", reason)
             isRecording = false
             recordingGeneration += 1
-            cancelActiveDictationSession()
+            cancelActiveDictationSession(interruptInference: interruptInference)
             overlay.hide()
             DictationTrace.$current.withValue(activeDictationTrace) { recorder.stop { _ in } }
             activeDictationTrace = nil
@@ -903,12 +907,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func cancelActiveDictationSession() {
+    private func cancelActiveDictationSession(interruptInference: Bool = true) {
         incrementalTimer?.cancel()
         incrementalTimer = nil
         guard let generation = activeDictationGeneration else { return }
         activeDictationGeneration = nil
-        dictationDelivery.cancel(generation: generation)
+        dictationDelivery.cancel(generation: generation, interruptInference: interruptInference)
     }
 
     // MARK: - Command mode (hold, speak an instruction, edit in place)
@@ -1041,14 +1045,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// reached the injector yet. Too late once its text is queued to paste.
     private func cancelFromKeyboard() {
         if isRecording {
-            discardActiveRecording(reason: "Escape pressed")
+            discardActiveRecording(reason: "Escape pressed", interruptInference: false)
         } else if let released = releasedDictation {
-            dictationDelivery.cancel(generation: released.generation)
+            dictationDelivery.cancel(generation: released.generation, interruptInference: false)
             // Before the audio handoff there's no pending release, so
             // cancel(generation:) can't fire onCancelled. Hide it here.
             dismissHud(released.hudGeneration)
         } else if let sequence = commandHudGenerations.first(where: { $0.value == recordingGeneration })?.key {
-            commandTasks[sequence]?.cancel()
+            // Skipping the command makes its task drop the result. Only the
+            // text-model phase is cancelled: cancelling speech inference
+            // would unload the speech model.
+            if !transcribingCommands.contains(sequence) { commandTasks[sequence]?.cancel() }
             completeCommand(sequence, with: .skip)
             dismissHud(recordingGeneration)
         } else {
@@ -1075,12 +1082,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let seq = dictationDelivery.beginCommand()
             if let hudGeneration { commandHudGenerations[seq] = hudGeneration }
             let context = captureDictationContext()
+            transcribingCommands.insert(seq)
             let task = Task {
                 do {
-                    let raw = try await transcriber.transcribe(
-                        samples: audio.samples,
-                        lowEnergy: audio.lowEnergy
-                    )
+                    let raw: String
+                    do {
+                        defer { self.transcribingCommands.remove(seq) }
+                        raw = try await transcriber.transcribe(
+                            samples: audio.samples,
+                            lowEnergy: audio.lowEnergy
+                        )
+                    }
                     guard self.dictationDelivery.isCommandPending(seq) else { return }
                     guard !raw.isEmpty else {
                         self.completeCommand(seq, with: .skip)

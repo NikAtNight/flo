@@ -132,11 +132,12 @@ final class DictationDelivery {
         pipeline.release(generation: generation, fullSamples: samples)
     }
 
-    func cancel(generation: Int) {
+    /// See `DictationSessionPipeline.cancel(generation:interruptInference:)`.
+    func cancel(generation: Int, interruptInference: Bool = true) {
         configurations.removeValue(forKey: generation)
         let cancelled = pending.removeValue(forKey: generation)
         if let sequence = cancelled?.sequence { generationsBySequence.removeValue(forKey: sequence) }
-        pipeline.cancel(generation: generation)
+        pipeline.cancel(generation: generation, interruptInference: interruptInference)
         if let cancelled {
             if let sequence = cancelled.sequence { injections.complete(sequence, with: .skip) }
             onCancelled(cancelled.release)

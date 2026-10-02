@@ -124,6 +124,9 @@ final class DictationSessionPipeline {
         var capturedAudioSaved = false
         var pendingChunks: [IncrementalChunk] = []
         var activeTask: Task<Void, Never>?
+        /// Text cleanup never touches the speech engine, so it is always
+        /// safe to cancel.
+        var activeTaskIsCleanup = false
         var releaseAudio: ReleaseAudio?
         var committedText = ""
         var chunkCount = 0
@@ -313,7 +316,13 @@ final class DictationSessionPipeline {
         scheduleReleaseTimeout(for: session)
     }
 
-    func cancel(generation: Int) {
+    /// `interruptInference: false` abandons the session without cancelling
+    /// its running task. Cancelling a task inside speech inference makes the
+    /// transcriber quarantine its engine, which is right for a stall but would
+    /// unload the model on every Escape. The abandoned task's result is
+    /// dropped by `isCurrent` when it returns, and the transcription gate
+    /// holds any new dictation until then. Text cleanup is still cancelled.
+    func cancel(generation: Int, interruptInference: Bool = true) {
         let trace = sessions[generation]?.trace ?? completed[generation]?.trace
         trace?.record(.cancellationRequested)
         if let session = sessions.removeValue(forKey: generation) {
@@ -322,7 +331,9 @@ final class DictationSessionPipeline {
             session.personalVoice?.finish(status: "cancelled")
             session.cancelled = true
             session.pendingChunks.removeAll()
-            session.activeTask?.cancel()
+            if interruptInference || session.activeTaskIsCleanup {
+                session.activeTask?.cancel()
+            }
             session.activeTask = nil
         }
         guard generationOrder.contains(generation) else { return }
@@ -506,6 +517,7 @@ final class DictationSessionPipeline {
             text: composed,
             context: session.context
         )
+        session.activeTaskIsCleanup = true
         session.activeTask = Task { @MainActor [weak self, weak session] in
             guard let self, let session else { return }
             session.trace?.record(.cleanupStarted)
