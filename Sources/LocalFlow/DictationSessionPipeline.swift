@@ -127,6 +127,7 @@ final class DictationSessionPipeline {
     private let transcribe: Transcribe
     private let cleanup: Cleanup
     private let onOutcome: OutcomeHandler
+    private let onPartialTranscript: ((Int, String) -> Void)?
     private let stalledGenerationTimeout: TimeInterval
     private var sessions: [Int: Session] = [:]
     private var generationOrder: [Int] = []
@@ -137,11 +138,13 @@ final class DictationSessionPipeline {
         transcribe: @escaping Transcribe,
         cleanup: @escaping Cleanup,
         onOutcome: @escaping OutcomeHandler,
+        onPartialTranscript: ((Int, String) -> Void)? = nil,
         stalledGenerationTimeout: TimeInterval = 90
     ) {
         self.transcribe = transcribe
         self.cleanup = cleanup
         self.onOutcome = onOutcome
+        self.onPartialTranscript = onPartialTranscript
         self.stalledGenerationTimeout = stalledGenerationTimeout
     }
 
@@ -355,6 +358,7 @@ final class DictationSessionPipeline {
                     text,
                     pauseSeconds: chunk.pauseSecondsBefore
                 )
+                onPartialTranscript?(session.generation, session.committedText)
                 session.chunkCount += 1
                 session.completedSampleEnd = chunk.sourceEndIndex ?? session.completedSampleEnd
                 session.trace?.record(.chunkCompleted, fields: [
@@ -398,6 +402,7 @@ final class DictationSessionPipeline {
                     tailText,
                     pauseSeconds: session.nextPauseSeconds
                 )
+                onPartialTranscript?(session.generation, wholeText)
                 finalize(session, transcript: wholeText)
             } catch {
                 guard isCurrent(session) else { return }

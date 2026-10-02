@@ -34,6 +34,7 @@ final class DictationDelivery {
     private let onCancelled: (Release) -> Void
     private let onCommandCancelled: (Int) -> Void
     private let onProcessingCountChange: (Int) -> Void
+    private let onPartialTranscript: (Int, String) -> Void
     private let stallTimeout: TimeInterval
     private let injectionInterval: TimeInterval
 
@@ -49,6 +50,7 @@ final class DictationDelivery {
         transcribe: transcribe,
         cleanup: cleanup,
         onOutcome: { [weak self] in self?.finish($0) },
+        onPartialTranscript: { [weak self] in self?.onPartialTranscript($0, $1) },
         stalledGenerationTimeout: stallTimeout
     )
     private lazy var injections = InjectionCoordinator(
@@ -75,6 +77,7 @@ final class DictationDelivery {
         inject: @escaping Inject,
         recordTranscript: @escaping (String) -> Void,
         onOutcome: @escaping (DictationSessionOutcome, Release) -> Void,
+        onPartialTranscript: @escaping (Int, String) -> Void = { _, _ in },
         onCancelled: @escaping (Release) -> Void,
         onCommandCancelled: @escaping (Int) -> Void,
         onProcessingCountChange: @escaping (Int) -> Void,
@@ -89,6 +92,7 @@ final class DictationDelivery {
         self.onCancelled = onCancelled
         self.onCommandCancelled = onCommandCancelled
         self.onProcessingCountChange = onProcessingCountChange
+        self.onPartialTranscript = onPartialTranscript
         self.stallTimeout = stallTimeout
         self.injectionInterval = injectionInterval
     }

@@ -17,6 +17,7 @@ final class SettingsApplication {
         var startAtLogin: Bool
         var commandHotkey: HotkeyManager.Key
         var keepMicWarm: Bool
+        var liveTranscript: Bool
         var cleanupEnabled: Bool
         var commandModeEnabled: Bool
         var theme: HudTheme
@@ -39,6 +40,7 @@ final class SettingsApplication {
         case startAtLogin(Bool)
         case commandHotkey(HotkeyManager.Key)
         case keepMicWarm(Bool)
+        case liveTranscript(Bool)
         case cleanupEnabled(Bool)
         case commandModeEnabled(Bool)
         case theme(HudTheme)
@@ -134,6 +136,7 @@ final class SettingsApplication {
         let automaticUpdates = Self.loadAutomaticUpdates(from: defaults)
         let commandHotkey = Self.loadCommandHotkey(from: defaults)
         let keepMicWarm = Self.loadBool(from: defaults, key: Settings.Key.keepMicWarm, default: true)
+        let liveTranscript = Self.loadBool(from: defaults, key: Settings.Key.liveTranscript, default: true)
         let cleanupEnabled = Self.loadBool(from: defaults, key: Settings.Key.cleanupEnabled, default: false)
         let commandModeEnabled = Self.loadBool(
             from: defaults,
@@ -170,6 +173,7 @@ final class SettingsApplication {
             startAtLogin: loginItem.isEnabled(),
             commandHotkey: commandHotkey,
             keepMicWarm: keepMicWarm,
+            liveTranscript: liveTranscript,
             cleanupEnabled: cleanupEnabled,
             commandModeEnabled: commandModeEnabled,
             theme: theme,
@@ -196,6 +200,7 @@ final class SettingsApplication {
         defaults.set(automaticUpdates, forKey: Settings.Key.automaticUpdates)
         defaults.set(commandHotkey.rawValue, forKey: Settings.Key.commandHotkey)
         defaults.set(keepMicWarm, forKey: Settings.Key.keepMicWarm)
+        defaults.set(liveTranscript, forKey: Settings.Key.liveTranscript)
         defaults.set(cleanupEnabled, forKey: Settings.Key.cleanupEnabled)
         defaults.set(commandModeEnabled, forKey: Settings.Key.commandModeEnabled)
         defaults.set(theme.rawValue, forKey: Settings.Key.hudTheme)
@@ -269,6 +274,12 @@ final class SettingsApplication {
             defaults.set(enabled, forKey: Settings.Key.keepMicWarm)
             values.keepMicWarm = enabled
             effects.applyKeepMicWarm(enabled)
+
+        case .liveTranscript(let enabled):
+            // The overlay reads the setting each time it presents.
+            guard enabled != values.liveTranscript else { return .success(()) }
+            defaults.set(enabled, forKey: Settings.Key.liveTranscript)
+            values.liveTranscript = enabled
 
         case .cleanupEnabled(let enabled):
             guard enabled != values.cleanupEnabled else { return .success(()) }

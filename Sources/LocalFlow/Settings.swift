@@ -30,6 +30,7 @@ enum Settings {
         static let commandReasoning = "commandReasoning"
         static let soundCues = "soundCues"
         static let keepMicWarm = "keepMicWarm"
+        static let liveTranscript = "liveTranscript"
         static let inputDeviceUID = "inputDeviceUID"
         static let customVocabulary = "customVocabulary"
         static let corrections = "corrections"
@@ -226,6 +227,12 @@ enum Settings {
     static var keepMicWarm: Bool {
         get { defaults.object(forKey: Key.keepMicWarm) as? Bool ?? true }
         set { defaults.set(newValue, forKey: Key.keepMicWarm) }
+    }
+
+    /// Show the raw text of finished chunks under the HUD while dictating.
+    static var liveTranscript: Bool {
+        get { defaults.object(forKey: Key.liveTranscript) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: Key.liveTranscript) }
     }
 
     /// CoreAudio device UID of the microphone to record from; nil = system default.

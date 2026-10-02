@@ -38,4 +38,15 @@ final class WaveformOverlayTests: XCTestCase {
         XCTAssertTrue(WaveformOverlay.isVisible(origin: NSPoint(x: 3000, y: 700),
                                                 size: size, on: screens))
     }
+
+    func testPanelWithTranscriptStripBelowCapsuleAtScreenBottomIsVisible() {
+        // With the live transcript strip on, the panel starts 30 pt below the
+        // saved capsule origin and is 30 pt taller.
+        let screens = [NSRect(x: 0, y: 0, width: 1440, height: 900)]
+        let tall = NSSize(width: size.width, height: size.height + 30)
+        XCTAssertTrue(WaveformOverlay.isVisible(origin: NSPoint(x: 100, y: 10 - 30),
+                                                size: tall, on: screens))
+        XCTAssertFalse(WaveformOverlay.isVisible(origin: NSPoint(x: 100, y: -200),
+                                                 size: tall, on: screens))
+    }
 }

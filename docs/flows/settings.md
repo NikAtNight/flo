@@ -18,6 +18,8 @@ controls are unavailable in LocalFlow Local. Keep dictation and waveform behavio
   feed retain Sparkle controls. This redesign does not change those policies.
 - Closing and reopening preserves the current pane and window position.
 - Listening themes and their animated previews remain in Dictation.
+- Dictation has "Show live transcript in the HUD", on by default. It shows raw
+  chunk text in a strip under the HUD while recording and processing.
 - The sidebar shows the installed bundle's version in every build. Local builds
   also identify their source revision and whether it includes uncommitted work.
 - Local builds have a Diagnostics pane with retained dictation, replay, and model
@@ -232,3 +234,17 @@ installation. Publication is verified through the release workflow after commit.
 PASS: final `swift test -c release`, 290 tests, in
 `/tmp/localflow-production-diagnostics-release-tests.log`. `swift package resolve`
 completed without changing the lockfile.
+
+## Live transcript setting, October 2, 2026
+
+Owner: LocalFlow maintainers. `Settings.liveTranscript` follows the
+`keepMicWarm` path through SettingsApplication and SettingsModel, but has no
+live effect closure. `WaveformOverlay` reads it each time it presents. When on,
+the panel is 30 pt taller (a 24 pt strip and a 6 pt gap under the capsule).
+`Settings.hudOrigin` still stores the capsule's bottom-left, so turning the
+setting on or off doesn't move the HUD. When off, the panel matches the old
+layout. The theme gallery and menu theme preview never show text.
+
+RemainingSettingsApplicationTests covers the default, persistence, and model
+routing. DictationSessionPipelineTests checks that partial text fires once per
+finished chunk and once after the tail, and never after cancel.
