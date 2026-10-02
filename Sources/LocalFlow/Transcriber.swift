@@ -149,7 +149,9 @@ actor Transcriber {
     }
 
     private static func loadEngine(model: String, trace: DictationTrace) async throws -> any SpeechEngine {
-        try await WhisperEngine.load(model: model, trace: trace)
+        switch TranscriptionModel.engine(forID: model) {
+        case .whisper: return try await WhisperEngine.load(model: model, trace: trace)
+        }
     }
 
     /// Names and jargon to bias decoding toward (people, products,
