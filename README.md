@@ -506,8 +506,9 @@ a folder shortcut, and **Delete All History**.
 - English-only decoding by default (the `.en` Whisper models).
 - In Secure Input fields (password boxes), LocalFlow avoids the clipboard and
   falls back to synthesized keystrokes, which some apps ignore.
-- No live partial text. Long recordings are transcribed in chunks while the
-  key is held, but text is pasted only after release.
+- Live text is raw and lags. Recordings past 8 seconds show finished chunks
+  under the HUD while the key is held, without corrections or cleanup. Text
+  is pasted only after release. Turn it off in Settings > Dictation.
 - No cursor-context awareness yet (see plan roadmap).
 
 ## Layout
