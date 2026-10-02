@@ -35,4 +35,12 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(Settings.whisperModels.map(\.name), TranscriptionModel.all.map(\.id))
         XCTAssertEqual(Settings.whisperModels.map(\.label), TranscriptionModel.all.map(\.label))
     }
+
+    func testIncrementalCadenceFollowsEngine() {
+        XCTAssertEqual(IncrementalCadence.forModel(TranscriptionModel.defaultID), .whisper)
+        XCTAssertEqual(IncrementalCadence.forModel(TranscriptionModel.parakeetV3ID), .parakeet)
+        XCTAssertEqual(IncrementalCadence.forModel("not-a-model"), .whisper)
+        XCTAssertEqual(IncrementalCadence.whisper, IncrementalCadence(startSeconds: 8, tickSeconds: 4))
+        XCTAssertEqual(IncrementalCadence.parakeet, IncrementalCadence(startSeconds: 4, tickSeconds: 2))
+    }
 }

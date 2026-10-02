@@ -452,6 +452,41 @@ final class DictationSessionPipelineTests: XCTestCase {
         XCTAssertFalse(partials.contains { $0.generation == 71 })
     }
 
+    func testFiveSecondSnapshotIsTooShortForWhisperButAcceptedForParakeet() {
+        // 2.5 s speech, 1 s pause, 1.5 s speech: a valid cut exists, so only
+        // the cadence start decides whether the snapshot becomes a chunk.
+        let rate = Int(AudioRecorder.sampleRate)
+        let snapshot = [Float](repeating: 0.2, count: rate * 5 / 2)
+            + [Float](repeating: 0, count: rate)
+            + [Float](repeating: 0.2, count: rate * 3 / 2)
+        let pipeline = DictationSessionPipeline(
+            transcribe: { _ in "chunk" },
+            cleanup: { request in .init(text: request.text, succeeded: true) },
+            onOutcome: { _ in }
+        )
+
+        func events(for cadence: IncrementalCadence, generation: Int) -> [DictationTrace.Event] {
+            let events = TraceEvents()
+            let trace = DictationTrace(sink: { events.append($0) })
+            let context = DictationSessionContext(
+                cleanupEnabled: false, styleProfile: .general, corrections: [], snippets: [],
+                incrementalCadence: cadence
+            )
+            pipeline.begin(generation: generation, context: context, trace: trace)
+            pipeline.processIncrementalSnapshot(generation: generation, samples: snapshot)
+            pipeline.cancel(generation: generation)
+            return events.events
+        }
+
+        let whisper = events(for: .whisper, generation: 80)
+        XCTAssertTrue(whisper.contains { $0.name == .incrementalSkipped && $0.status == .tooShort })
+        XCTAssertFalse(whisper.contains { $0.name == .chunkSubmitted })
+
+        let parakeet = events(for: .parakeet, generation: 81)
+        XCTAssertFalse(parakeet.contains { $0.name == .incrementalSkipped })
+        XCTAssertTrue(parakeet.contains { $0.name == .chunkSubmitted })
+    }
+
     private func makePipeline(
         transcriber: ControlledTranscriber,
         cleaner: RecordingCleaner,

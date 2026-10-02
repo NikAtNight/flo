@@ -1,24 +1,46 @@
 import Foundation
 
+/// How often a held dictation is transcribed for live text. Whisper Turbo
+/// took 350 to 975 ms per chunk, so it waits 8 s and ticks every 4 s.
+/// Parakeet took 40 to 90 ms on the same clips, so it can start at 4 s and
+/// tick every 2 s.
+struct IncrementalCadence: Equatable {
+    let startSeconds: TimeInterval
+    let tickSeconds: TimeInterval
+
+    static let whisper = IncrementalCadence(startSeconds: 8, tickSeconds: 4)
+    static let parakeet = IncrementalCadence(startSeconds: 4, tickSeconds: 2)
+
+    static func forModel(_ id: String) -> IncrementalCadence {
+        switch TranscriptionModel.engine(forID: id) {
+        case .whisper: .whisper
+        case .parakeet: .parakeet
+        }
+    }
+}
+
 struct DictationSessionContext {
     let cleanupEnabled: Bool
     let styleProfile: AppStyleProfile
     let corrections: [(wrong: String, right: String)]
     let snippets: [(trigger: String, expansion: String)]
     let ollamaModel: String
+    let incrementalCadence: IncrementalCadence
 
     init(
         cleanupEnabled: Bool,
         styleProfile: AppStyleProfile,
         corrections: [(wrong: String, right: String)],
         snippets: [(trigger: String, expansion: String)],
-        ollamaModel: String = ""
+        ollamaModel: String = "",
+        incrementalCadence: IncrementalCadence = .whisper
     ) {
         self.cleanupEnabled = cleanupEnabled
         self.styleProfile = styleProfile
         self.corrections = corrections
         self.snippets = snippets
         self.ollamaModel = ollamaModel
+        self.incrementalCadence = incrementalCadence
     }
 }
 
@@ -77,8 +99,6 @@ enum DictationSessionOutcome: Equatable {
 /// order consistent across overlapping generations.
 @MainActor
 final class DictationSessionPipeline {
-    static let incrementalStartSeconds: TimeInterval = 8
-    static let incrementalTickSeconds: TimeInterval = 4
     typealias Transcribe = (DictationTranscriptionRequest) async throws -> String
     typealias Cleanup = (DictationCleanupRequest) async -> TranscriptCleanupResult
     typealias OutcomeHandler = (DictationSessionOutcome) -> Void
@@ -175,9 +195,10 @@ final class DictationSessionPipeline {
     /// Shared by live capture and file replay so benchmarks use the same
     /// thresholds and chunk acceptance rules as dictation.
     func processIncrementalSnapshot(generation: Int, samples: [Float]) {
-        let trace = sessions[generation]?.trace
+        guard let session = sessions[generation] else { return }
+        let trace = session.trace
         trace?.record(.incrementalAttempt, fields: [.samples: Double(samples.count)])
-        guard samples.count >= Int(Self.incrementalStartSeconds * AudioRecorder.sampleRate) else {
+        guard samples.count >= Int(session.context.incrementalCadence.startSeconds * AudioRecorder.sampleRate) else {
             trace?.record(.incrementalSkipped, status: .tooShort)
             return
         }

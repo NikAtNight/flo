@@ -143,7 +143,8 @@ enum DictationReplay {
             styleProfile: .general,
             corrections: Settings.corrections,
             snippets: Settings.snippets,
-            ollamaModel: options.ollamaModel
+            ollamaModel: options.ollamaModel,
+            incrementalCadence: .forModel(options.whisperModel)
         )
 
         // Structured prewarm tasks finish before the final log flush, including
@@ -167,7 +168,10 @@ enum DictationReplay {
                 pipeline.begin(generation: generation, context: context, trace: trace)
 
                 do {
-                    try await deliverRealtimeAudio(samples: samples, generation: generation, pipeline: pipeline)
+                    try await deliverRealtimeAudio(
+                        samples: samples, generation: generation,
+                        cadence: context.incrementalCadence, pipeline: pipeline
+                    )
                 } catch {
                     pipeline.cancel(generation: generation)
                     throw error
@@ -216,11 +220,12 @@ enum DictationReplay {
     private static func deliverRealtimeAudio(
         samples: [Float],
         generation: Int,
+        cadence: IncrementalCadence,
         pipeline: DictationSessionPipeline
     ) async throws {
         let started = DispatchTime.now().uptimeNanoseconds
         let totalDuration = Double(samples.count) / AudioRecorder.sampleRate
-        var tick = DictationSessionPipeline.incrementalStartSeconds
+        var tick = cadence.startSeconds
         while tick < totalDuration {
             let target = started + UInt64(tick * 1_000_000_000)
             let now = DispatchTime.now().uptimeNanoseconds
@@ -236,7 +241,7 @@ enum DictationReplay {
             )
             // Live capture schedules the next tick from the actual callback,
             // not the original deadline. Do not catch up with extra passes.
-            tick = elapsed + DictationSessionPipeline.incrementalTickSeconds
+            tick = elapsed + cadence.tickSeconds
         }
 
         let target = started + UInt64(totalDuration * 1_000_000_000)

@@ -126,10 +126,11 @@ any speech model id from the Settings list, including `parakeet-tdt-0.6b-v3`. De
 local models only for private test audio. Normal Whisper model loading may
 download missing model weights. It never uploads the recording.
 
-Replay loads Whisper once, reports model-load time separately, and uses the
+Replay loads the speech model once, reports model-load time separately, and uses the
 same session pipeline and incremental cut logic as the app. It supplies audio
-prefixes in real time at the existing 8-second first tick and 4-second subsequent
-ticks. It also invokes the usual cleanup prewarm at the start of each run.
+prefixes in real time on the app's cadence for the chosen model: an 8-second
+first tick and 4-second later ticks for Whisper, or 4 and 2 seconds for Parakeet.
+It also invokes the usual cleanup prewarm at the start of each run.
 No microphone, event tap, target app, injection, or history is involved. No audio
 is automatically saved. Each completed transcript is printed to stdout as a
 JSON line with its run number, trace ID, and release-to-result milliseconds.
@@ -147,7 +148,7 @@ exiting and flushing logs; that final wait is excluded from result latency.
 The first run means first inference in that process. Later runs reuse that
 engine, but neither label proves cache or backend residency. File replay does
 not simulate the microphone's startup noise/silence gate. It cannot reproduce
-an 8-second incremental tick missed because the microphone became live late.
+a first incremental tick missed because the microphone became live late.
 The one-file CLI covers sequential repetitions, not overlapping dictations.
 Test overlapping dictations through the real hotkey path.
 

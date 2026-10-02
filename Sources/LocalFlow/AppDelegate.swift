@@ -839,7 +839,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             styleProfile: AppStyleProfile.current(),
             corrections: Settings.corrections,
             snippets: Settings.snippets,
-            ollamaModel: Settings.ollamaModel
+            ollamaModel: Settings.ollamaModel,
+            incrementalCadence: .forModel(Settings.whisperModel)
         )
     }
 
@@ -874,20 +875,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ))
         activeDictationGeneration = generation
         hudDictationGeneration = (dictation: generation, hud: recordingGeneration)
-        scheduleIncrementalTick(generation: generation, after: DictationSessionPipeline.incrementalStartSeconds)
+        let cadence = context.incrementalCadence
+        scheduleIncrementalTick(generation: generation, cadence: cadence, after: cadence.startSeconds)
     }
 
-    private func scheduleIncrementalTick(generation: Int, after delay: TimeInterval) {
+    private func scheduleIncrementalTick(generation: Int, cadence: IncrementalCadence, after delay: TimeInterval) {
         let work = DispatchWorkItem { [weak self] in
-            self?.runIncrementalTick(generation: generation)
+            self?.runIncrementalTick(generation: generation, cadence: cadence)
         }
         incrementalTimer = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    private func runIncrementalTick(generation: Int) {
+    private func runIncrementalTick(generation: Int, cadence: IncrementalCadence) {
         guard activeDictationGeneration == generation, isRecording else { return }
-        scheduleIncrementalTick(generation: generation, after: DictationSessionPipeline.incrementalTickSeconds)
+        scheduleIncrementalTick(generation: generation, cadence: cadence, after: cadence.tickSeconds)
         guard dictationDelivery.canAcceptIncrementalChunk(generation: generation) else {
             activeDictationTrace?.record(.incrementalSkipped, status: .busy)
             return
