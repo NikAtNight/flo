@@ -20,11 +20,18 @@ final class CancelKeyMonitor {
     private var wantsEnabled = false
     private var threadTap: CFMachPort?
 
-    /// Escape with no Command, Control or Shift. Option and Fn are allowed
-    /// because the user may still be holding the push-to-talk key.
+    /// Escape with no Control, Shift or left Command. Option, Fn and Right
+    /// Command are allowed because the user may still be holding the
+    /// push-to-talk key. Command without a device bit counts as left.
     static func shouldCancel(keyCode: Int64, flags: CGEventFlags) -> Bool {
         guard keyCode == Int64(kVK_Escape) else { return false }
-        return flags.intersection([.maskCommand, .maskControl, .maskShift]).isEmpty
+        guard flags.intersection([.maskControl, .maskShift]).isEmpty else { return false }
+        if flags.contains(.maskCommand) {
+            let leftCommand = CGEventFlags(rawValue: 0x08) // NX_DEVICELCMDKEYMASK
+            let rightCommand = CGEventFlags(rawValue: 0x10) // NX_DEVICERCMDKEYMASK
+            return flags.contains(rightCommand) && !flags.contains(leftCommand)
+        }
+        return true
     }
 
     func activate() {

@@ -12,16 +12,23 @@ final class CancelKeyMonitorTests: XCTestCase {
         XCTAssertEqual(kVK_Escape, 53)
     }
 
+    private let leftCommand = CGEventFlags.maskCommand.union(CGEventFlags(rawValue: 0x08))
+    private let rightCommand = CGEventFlags.maskCommand.union(CGEventFlags(rawValue: 0x10))
+
     func testEscapeWhileHoldingTheHotkeyCancels() {
-        // Right Option and Fn are push-to-talk keys, so they're often held.
+        // Right Option, Right Command and Fn are push-to-talk keys, so
+        // they're often held.
         let rightOption = CGEventFlags.maskAlternate.union(CGEventFlags(rawValue: 0x40))
         XCTAssertTrue(CancelKeyMonitor.shouldCancel(keyCode: 53, flags: rightOption))
+        XCTAssertTrue(CancelKeyMonitor.shouldCancel(keyCode: 53, flags: .maskAlternate))
         XCTAssertTrue(CancelKeyMonitor.shouldCancel(keyCode: 53, flags: .maskSecondaryFn))
+        XCTAssertTrue(CancelKeyMonitor.shouldCancel(keyCode: 53, flags: rightCommand))
     }
 
     func testEscapeChordsPassThrough() {
-        for flags: CGEventFlags in [.maskCommand, .maskControl, .maskShift,
-                                    [.maskCommand, .maskAlternate]] {
+        for flags: CGEventFlags in [leftCommand, leftCommand.union(rightCommand), .maskCommand,
+                                    .maskControl, .maskShift, rightCommand.union(.maskShift),
+                                    leftCommand.union(.maskAlternate)] {
             XCTAssertFalse(CancelKeyMonitor.shouldCancel(keyCode: 53, flags: flags))
         }
     }
