@@ -18,15 +18,19 @@ worth being explicit about them:
 | Capability | Why it needs it | Entitlement / permission |
 |---|---|---|
 | Microphone | Records while you hold the hotkey | `com.apple.security.device.audio-input`, TCC Microphone |
-| Global key monitoring | Detects the hold-to-talk key in any app, via a `CGEventTap` on modifier-key events, plus a second tap that watches for Escape only while a dictation is recording or processing | TCC Accessibility |
+| Global key monitoring | Detects the hold-to-talk key in any app, via a `CGEventTap` on modifier-key events, plus a second `keyDown` tap, enabled only while a dictation is recording or processing, that acts on Escape | TCC Accessibility |
 | Accessibility and synthesized keystrokes | Reads selected text in command mode through Accessibility and pastes with ⌘V | TCC Accessibility |
 | Clipboard access | Puts the transcript on the clipboard to paste it, then restores your previous contents | none (unrestricted on macOS) |
 | Network | Downloads the Whisper model on first run; talks to `localhost:11434` if the optional Ollama backend is used | `com.apple.security.network.client` |
 
 The hotkey tap only observes `flagsChanged` (modifier) events. A second tap
-watches `keyDown` for the Escape key only, and only while a dictation is
-recording or processing. It's disabled the rest of the time, so it receives
-nothing. Neither tap records character keystrokes.
+observes `keyDown` events so Escape can cancel a dictation. A `CGEventTap`
+can't filter by key, so while this tap is enabled every key press passes
+through its callback. The callback acts on Escape and passes every other key
+on untouched. The tap is enabled only while a dictation is recording or
+processing. With text cleanup on, processing can last up to the 90 s stall
+timeout. The rest of the time the tap is disabled and receives nothing.
+Neither tap records, stores, or logs keystrokes.
 
 ## Where your data goes
 
