@@ -80,6 +80,44 @@ final class DictationDiagnosticPipelineTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("\(cancelledID)/original.wav").path))
     }
 
+    func testPreviewIsTracedButKeepsAudioAndTextOutOfTheArchive() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = DictationDiagnosticStore(folder: root)
+        let events = TraceEvents()
+        let trace = DictationTrace(sink: { events.append($0) })
+        let parakeet = DictationSessionContext(
+            cleanupEnabled: false, styleProfile: .general, corrections: [], snippets: [],
+            incrementalCadence: .parakeet
+        )
+        let recording = store.begin(.init(traceID: trace.id, context: parakeet, whisperModel: "test",
+                                          microphone: "test", vocabulary: ""))
+        var segments: [DictationTranscriptionSegment] = []
+        var archiveAttached: [Bool] = []
+        let previewed = expectation(description: "Preview transcribed")
+        let delivered = expectation(description: "Delivered")
+        let pipeline = DictationSessionPipeline(transcribe: { request in
+            segments.append(request.segment)
+            archiveAttached.append(DictationDiagnosticStore.Recording.current != nil)
+            if request.segment == .preview { previewed.fulfill() }
+            return request.segment == .preview ? "preview words" : "final words"
+        }, cleanup: { request in .init(text: request.text, succeeded: true) },
+        onOutcome: { _ in delivered.fulfill() })
+        pipeline.begin(generation: 1, context: parakeet, trace: trace, diagnostics: recording)
+        pipeline.processIncrementalSnapshot(generation: 1, samples: speech + speech)
+        await fulfillment(of: [previewed], timeout: 5)
+        pipeline.release(generation: 1, fullSamples: speech + speech)
+        await fulfillment(of: [delivered], timeout: 5)
+        store.flush()
+
+        XCTAssertEqual(segments, [.preview, .fullUtterance])
+        XCTAssertEqual(archiveAttached, [false, true])
+        let archived = try readEvents(root, id: trace.id)
+        XCTAssertFalse(archived.contains { $0.segment == .preview })
+        XCTAssertFalse(archived.contains { $0.text?.contains("preview words") == true })
+        XCTAssertTrue(events.events.contains { $0.name == .transcriptionRequested && $0.segment == .preview })
+    }
+
     func testNoRecordingIsAttachedByDefault() async {
         let delivered = expectation(description: "Delivered without archive")
         let pipeline = DictationSessionPipeline(transcribe: { _ in
