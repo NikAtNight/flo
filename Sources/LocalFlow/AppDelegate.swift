@@ -630,13 +630,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // back to .idle and the banner would never appear.
                     modelLoaded = true
                     state = .failed(UserFacingIssue(
-                        summary: "Couldn't switch Whisper model",
+                        summary: "Couldn't switch speech model",
                         details: "Couldn't load \(model): \(error.localizedDescription) "
                             + "The previous model is still active, and LocalFlow will retry."
                     ))
                 } else {
                     state = .failed(UserFacingIssue(
-                        summary: "Couldn't load Whisper model",
+                        summary: "Couldn't load speech model",
                         details: "\(error.localizedDescription) LocalFlow will retry."
                     ))
                 }
@@ -1281,10 +1281,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         modelMenuItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
         let modelMenu = NSMenu()
-        for entry in Settings.whisperModels {
+        var previousGroup: String?
+        for entry in TranscriptionModel.all {
+            if let previousGroup, previousGroup != entry.group { modelMenu.addItem(.separator()) }
+            previousGroup = entry.group
             let item = NSMenuItem(title: entry.label, action: #selector(selectWhisperModel(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = entry.name
+            item.representedObject = entry.id
             modelMenu.addItem(item)
         }
         modelMenuItem.submenu = modelMenu

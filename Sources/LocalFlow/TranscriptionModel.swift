@@ -26,13 +26,19 @@ struct TranscriptionModel: Equatable, Identifiable {
         whisper("openai_whisper-small.en", "Small English (fastest useful)"),
         whisper("openai_whisper-large-v3-v20240930_626MB", "Large v3 626 MB (compact, high accuracy)"),
         whisper(defaultID, "Large v3 Turbo (best accuracy, default)"),
+        // No decoder prompt: custom vocabulary does nothing for it.
+        TranscriptionModel(id: parakeetV3ID, engine: .parakeet, label: "Parakeet TDT 0.6B v3 (fastest, no vocabulary)", group: "Parakeet"),
     ]
+
+    /// Group headings in list order.
+    static let groups: [String] = all.reduce(into: []) { groups, model in
+        if !groups.contains(model.group) { groups.append(model.group) }
+    }
 
     /// Unknown ids are treated as WhisperKit registry names so
     /// `--whisper-model` and test ids keep working.
     static func engine(forID id: String) -> TranscriptionEngine {
-        if id == parakeetV3ID { return .parakeet }
-        return all.first { $0.id == id }?.engine ?? .whisper
+        all.first { $0.id == id }?.engine ?? .whisper
     }
 
     private static func whisper(_ id: String, _ label: String) -> TranscriptionModel {

@@ -16,6 +16,12 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(TranscriptionModel.engine(forID: TranscriptionModel.parakeetV3ID), .parakeet)
     }
 
+    func testParakeetIsSelectableUnderItsOwnGroup() {
+        let parakeet = TranscriptionModel.all.first { $0.id == TranscriptionModel.parakeetV3ID }
+        XCTAssertEqual(parakeet?.engine, .parakeet)
+        XCTAssertEqual(TranscriptionModel.groups, ["Whisper", "Parakeet"])
+    }
+
     func testEngineForWhisperID() {
         XCTAssertEqual(TranscriptionModel.engine(forID: "openai_whisper-small.en"), .whisper)
     }

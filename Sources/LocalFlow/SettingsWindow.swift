@@ -589,9 +589,13 @@ struct SettingsView: View {
     private var dictationPane: some View {
         Form {
             Section("Transcription") {
-                Picker("Whisper model", selection: $model.whisperModel) {
-                    ForEach(Settings.whisperModels, id: \.name) { entry in
-                        Text(entry.label).tag(entry.name)
+                Picker("Speech model", selection: $model.whisperModel) {
+                    ForEach(TranscriptionModel.groups, id: \.self) { group in
+                        Section(group) {
+                            ForEach(TranscriptionModel.all.filter { $0.group == group }) { entry in
+                                Text(entry.label).tag(entry.id)
+                            }
+                        }
                     }
                 }
 
@@ -780,7 +784,7 @@ struct SettingsView: View {
             } header: {
                 Text("Custom vocabulary")
             } footer: {
-                Text("Comma-separated terms Whisper keeps mishearing (people, projects, jargon). They bias recognition on every dictation. Keep it short, a couple dozen terms at most; heavy bias can backfire.")
+                Text("Comma-separated terms Whisper keeps mishearing (people, projects, jargon). They bias recognition on every dictation. Keep it short, a couple dozen terms at most; heavy bias can backfire. Parakeet ignores this list; corrections still apply.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
