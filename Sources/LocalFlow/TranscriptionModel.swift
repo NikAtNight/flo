@@ -1,7 +1,7 @@
 import Foundation
 
 enum TranscriptionEngine: String {
-    case whisper
+    case whisper, parakeet
 }
 
 /// A selectable speech model. The id is persisted in the existing
@@ -13,6 +13,7 @@ struct TranscriptionModel: Equatable, Identifiable {
     /// Heading for picker sections and menu separators.
     let group: String
 
+    static let parakeetV3ID = "parakeet-tdt-0.6b-v3"
     static let defaultID = "openai_whisper-large-v3-v20240930_turbo"
 
     /// Whisper models come from the argmaxinc/whisperkit-coreml registry,
@@ -30,7 +31,8 @@ struct TranscriptionModel: Equatable, Identifiable {
     /// Unknown ids are treated as WhisperKit registry names so
     /// `--whisper-model` and test ids keep working.
     static func engine(forID id: String) -> TranscriptionEngine {
-        all.first { $0.id == id }?.engine ?? .whisper
+        if id == parakeetV3ID { return .parakeet }
+        return all.first { $0.id == id }?.engine ?? .whisper
     }
 
     private static func whisper(_ id: String, _ label: String) -> TranscriptionModel {

@@ -151,6 +151,7 @@ actor Transcriber {
     private static func loadEngine(model: String, trace: DictationTrace) async throws -> any SpeechEngine {
         switch TranscriptionModel.engine(forID: model) {
         case .whisper: return try await WhisperEngine.load(model: model, trace: trace)
+        case .parakeet: return try await ParakeetEngine.load(trace: trace)
         }
     }
 
@@ -366,7 +367,7 @@ actor Transcriber {
         return first + separator + second
     }
 
-    private static func endsSentence(_ text: String) -> Bool {
+    static func endsSentence(_ text: String) -> Bool {
         guard let last = text.last else { return false }
         return last == "." || last == "!" || last == "?" || last == "…"
     }

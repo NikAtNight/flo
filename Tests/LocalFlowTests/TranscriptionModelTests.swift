@@ -12,6 +12,10 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(Settings.defaultWhisperModel, TranscriptionModel.defaultID)
     }
 
+    func testEngineForParakeetID() {
+        XCTAssertEqual(TranscriptionModel.engine(forID: TranscriptionModel.parakeetV3ID), .parakeet)
+    }
+
     func testEngineForWhisperID() {
         XCTAssertEqual(TranscriptionModel.engine(forID: "openai_whisper-small.en"), .whisper)
     }
