@@ -4,18 +4,13 @@ import AppKit
 /// panel at the bottom-center of the screen, draggable to wherever the user
 /// wants it (the spot persists across launches). The visual itself is
 /// whichever HudTheme the user picked — system glass for Liquid Glass, a
-/// frosted capsule for most themes, and no chrome for the bare themes.
+/// frosted capsule for most themes, and no chrome for the bare themes. With
+/// live transcript on, a text panel opens above the capsule once the first
+/// words arrive.
 @MainActor
 final class WaveformOverlay {
     private let panel: NSPanel
-    private var hudView: HudView
-    private var theme: HudTheme
-    // Live transcript strip under the capsule. The allowance is the extra
-    // panel height below the capsule; 0 when the setting is off.
-    private static let stripHeight: CGFloat = 24
-    private static let stripGap: CGFloat = 6
-    private var transcriptStrip: TranscriptStripView?
-    private var stripAllowance: CGFloat = 0
+    private var content: HudContentView
     private var acceptsTranscript = false
     private var hideGeneration = 0
     private var previewTimer: Timer?
@@ -32,9 +27,9 @@ final class WaveformOverlay {
     nonisolated(unsafe) private var inputDrainScheduled = false
 
     init() {
-        theme = HudTheme.current
+        content = HudContentView(theme: HudTheme.current, liveTranscript: Settings.liveTranscript)
         panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: theme.size),
+            contentRect: NSRect(origin: .zero, size: content.frame.size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: true
@@ -44,101 +39,38 @@ final class WaveformOverlay {
         panel.hasShadow = false
         panel.level = .statusBar
         // Draggable, and .nonactivatingPanel keeps the drag from stealing
-        // focus from the app being dictated into.
+        // focus from the app being dictated into. The empty space reserved
+        // for the transcript panel stays click-through via HudContentView's
+        // hitTest.
         panel.ignoresMouseEvents = false
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
-
-        hudView = HudView(frame: NSRect(origin: .zero, size: theme.size),
-                          renderer: theme.makeRenderer())
-        applyTheme(theme)
+        panel.contentView = content
 
         moveObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didMoveNotification, object: panel, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.programmaticMove, self.panel.isVisible else { return }
-                // The saved origin is the capsule's, so it survives the strip
-                // being turned on or off.
-                let origin = self.panel.frame.origin
-                Settings.hudOrigin = NSPoint(x: origin.x, y: origin.y + self.stripAllowance)
+                // The saved origin is the capsule's, so it survives the
+                // transcript panel being turned on or off or flipping sides.
+                Settings.hudOrigin = HudLayout.capsuleOrigin(
+                    windowOrigin: self.panel.frame.origin,
+                    placement: self.content.placement,
+                    reserve: self.content.reserve
+                )
             }
         }
     }
 
-    private func applyTheme(_ newTheme: HudTheme) {
-        hudView.stopAnimating() // the outgoing view's timer must not outlive it
-        theme = newTheme
-        let size = newTheme.size
-        stripAllowance = Settings.liveTranscript ? Self.stripGap + Self.stripHeight : 0
+    private func rebuildContent() {
+        content.hudView.stopAnimating() // the outgoing view's timer must not outlive it
+        content = HudContentView(theme: HudTheme.current, liveTranscript: Settings.liveTranscript)
         programmaticMove = true
-        panel.setContentSize(NSSize(width: size.width, height: size.height + stripAllowance))
+        panel.setContentSize(content.frame.size)
         programmaticMove = false
-        let bounds = NSRect(origin: .zero, size: size)
-
-        hudView = HudView(frame: bounds, renderer: newTheme.makeRenderer())
-        hudView.autoresizingMask = [.width, .height]
-
-        let container: NSView
-        if newTheme.isBare {
-            let bare = NSView(frame: bounds)
-            bare.addSubview(hudView)
-            container = bare
-        } else if newTheme == .liquidGlass {
-            #if compiler(>=6.2)
-            if #available(macOS 26.0, *) {
-                let glass = NSGlassEffectView(frame: bounds)
-                glass.style = .regular
-                glass.cornerRadius = size.height / 2
-                glass.tintColor = NSColor.white.withAlphaComponent(0.025)
-                glass.wantsLayer = true
-                glass.layer?.cornerRadius = size.height / 2
-                glass.layer?.cornerCurve = .continuous
-                glass.layer?.masksToBounds = true
-                glass.contentView = hudView
-                container = glass
-            } else {
-                container = makeBlurContainer(bounds: bounds, size: size)
-            }
-            #else
-            container = makeBlurContainer(bounds: bounds, size: size)
-            #endif
-        } else {
-            container = makeBlurContainer(bounds: bounds, size: size)
-        }
-
-        guard stripAllowance > 0 else {
-            transcriptStrip = nil
-            panel.contentView = container
-            return
-        }
-        // Wrap the unchanged capsule so blur, glass and bare themes keep their
-        // own geometry, and hang the strip below it.
-        let outer = NSView(frame: NSRect(x: 0, y: 0, width: size.width,
-                                         height: size.height + stripAllowance))
-        container.setFrameOrigin(NSPoint(x: 0, y: stripAllowance))
-        outer.addSubview(container)
-        let strip = TranscriptStripView(frame: NSRect(x: 0, y: 0, width: size.width,
-                                                      height: Self.stripHeight))
-        outer.addSubview(strip)
-        transcriptStrip = strip
-        panel.contentView = outer
-    }
-
-    private func makeBlurContainer(bounds: NSRect, size: NSSize) -> NSView {
-        let blur = NSVisualEffectView(frame: bounds)
-        blur.material = .hudWindow
-        blur.state = .active
-        blur.blendingMode = .behindWindow
-        blur.wantsLayer = true
-        blur.layer?.cornerRadius = size.height / 2
-        blur.layer?.cornerCurve = .continuous
-        blur.layer?.masksToBounds = true
-        blur.layer?.borderWidth = 1
-        blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
-        blur.addSubview(hudView)
-        return blur
+        panel.contentView = content
     }
 
     /// Thread-safe: callable from the audio capture thread.
@@ -186,8 +118,8 @@ final class WaveformOverlay {
         inputDrainScheduled = false
         inputLock.unlock()
 
-        if let level { hudView.ingest(level: level) }
-        if let spectrum { hudView.ingest(spectrum: spectrum) }
+        if let level { content.hudView.ingest(level: level) }
+        if let spectrum { content.hudView.ingest(spectrum: spectrum) }
     }
 
     /// Hotkey pressed: the mic engine is starting but no audio has arrived
@@ -199,21 +131,21 @@ final class WaveformOverlay {
 
     /// First real audio buffer arrived — snap to the full-brightness waveform.
     func captureLive() {
-        hudView.setPhase(.live)
+        content.setPhase(.live)
     }
 
     /// Hotkey released: keep the panel up as an indeterminate loading state
     /// until the pipeline resolves and the caller hides it (or a new press
     /// takes the panel over via show()).
     func beginProcessing() {
-        hudView.setPhase(.processing)
+        content.setPhase(.processing)
     }
 
     /// Raw text of the chunks finished so far. Ignored once the HUD is
-    /// hiding, so a late chunk can't write into the next press's strip.
+    /// hiding, so a late chunk can't write into the next press's panel.
     func showTranscript(_ text: String) {
         guard acceptsTranscript else { return }
-        transcriptStrip?.text = text.replacingOccurrences(of: "\n", with: " ")
+        content.setTranscript(text, animated: true)
     }
 
     func hide() {
@@ -221,7 +153,7 @@ final class WaveformOverlay {
         acceptsTranscript = false
         hideGeneration += 1
         let generation = hideGeneration
-        hudView.stopAnimating()
+        content.hudView.stopAnimating()
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
             panel.animator().alphaValue = 0
@@ -235,32 +167,46 @@ final class WaveformOverlay {
     }
 
     private func present(phase: HudView.Phase) {
-        if HudTheme.current != theme || Settings.liveTranscript != (stripAllowance > 0) {
-            applyTheme(HudTheme.current)
+        if HudTheme.current != content.theme || Settings.liveTranscript != content.showsTranscript {
+            rebuildContent()
         }
         hideGeneration += 1
-        transcriptStrip?.text = ""
+        content.setTranscript("", animated: false)
         acceptsTranscript = true
-        let origin: NSPoint
+
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        let capsuleSize = content.theme.size
+        let reserve = content.reserve
+        let capsuleOrigin: NSPoint
         if let saved = Settings.hudOrigin,
-           Self.isVisible(origin: NSPoint(x: saved.x, y: saved.y - stripAllowance),
-                          size: panel.frame.size,
-                          on: NSScreen.screens.map(\.visibleFrame)) {
-            origin = NSPoint(x: saved.x, y: saved.y - stripAllowance)
+           Self.isVisible(origin: HudLayout.windowOrigin(
+                              capsuleOrigin: saved,
+                              placement: HudLayout.placement(
+                                  capsuleFrame: NSRect(origin: saved, size: capsuleSize),
+                                  reserve: reserve, screens: screens),
+                              reserve: reserve),
+                          size: content.frame.size,
+                          on: screens) {
+            capsuleOrigin = saved
         } else {
             // Default bottom-center — also the fallback when the saved spot
             // is on a screen that is no longer connected.
             guard let screen = NSScreen.main else { return }
-            origin = NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2,
-                             y: screen.visibleFrame.minY + 64 - stripAllowance)
+            capsuleOrigin = NSPoint(x: screen.visibleFrame.midX - capsuleSize.width / 2,
+                                    y: screen.visibleFrame.minY + 64)
         }
+        content.placement = HudLayout.placement(
+            capsuleFrame: NSRect(origin: capsuleOrigin, size: capsuleSize),
+            reserve: reserve, screens: screens)
         programmaticMove = true
-        panel.setFrameOrigin(origin)
+        panel.setFrameOrigin(HudLayout.windowOrigin(capsuleOrigin: capsuleOrigin,
+                                                    placement: content.placement,
+                                                    reserve: reserve))
         programmaticMove = false
 
-        hudView.reset()
-        hudView.setPhase(phase)
-        hudView.startAnimating()
+        content.hudView.reset()
+        content.setPhase(phase)
+        content.hudView.startAnimating()
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
@@ -269,7 +215,7 @@ final class WaveformOverlay {
         }
     }
 
-    /// Whether a panel of `size` at `origin` still lands on any connected
+    /// Whether a window of `size` at `origin` still lands on any connected
     /// screen — a position saved on a since-removed display must not leave
     /// the HUD invisible and undraggable.
     nonisolated static func isVisible(
@@ -283,13 +229,23 @@ final class WaveformOverlay {
 
     // MARK: - Menu preview
 
+    /// Sample dictation fed to the theme preview when live transcript is on,
+    /// so picking a theme also shows how its text panel looks.
+    private static let previewLines: [(at: TimeInterval, text: String)] = [
+        (0.5, "Okay, quick note for tomorrow."),
+        (1.3, "Move the design review to two."),
+        (2.1, "Ask Priya for the final mockups"),
+        (2.8, "and book a room with a screen."),
+    ]
+
     /// Shows the HUD for a few seconds fed by synthesized "speech" so a theme
     /// picked from the menu can be judged without dictating anything.
     func preview() {
         cancelPreview()
         present(phase: .live)
-        acceptsTranscript = false // theme previews never show text
+        acceptsTranscript = false // real chunks never land in a preview
         let start = Date()
+        var linesShown = 0
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -300,8 +256,14 @@ final class WaveformOverlay {
                     return
                 }
                 let level = SyntheticSpeech.level(at: t)
-                self.hudView.ingest(level: level)
-                self.hudView.ingest(spectrum: SyntheticSpeech.spectrum(at: t, level: level))
+                self.content.hudView.ingest(level: level)
+                self.content.hudView.ingest(spectrum: SyntheticSpeech.spectrum(at: t, level: level))
+                let due = Self.previewLines.filter { $0.at <= t }.count
+                if due > linesShown {
+                    linesShown = due
+                    let text = Self.previewLines.prefix(due).map(\.text).joined(separator: " ")
+                    self.content.setTranscript(text, animated: true)
+                }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -318,7 +280,7 @@ final class WaveformOverlay {
 /// ticks (audio buffers arrive slower than 30 fps), applies auto-gain to the
 /// spectrum so any mic lands in 0…1, and hands each frame to the renderer.
 /// Flipped so renderer coordinates are y-down, matching the design prototypes.
-private final class HudView: NSView {
+final class HudView: NSView {
     override var isFlipped: Bool { true }
 
     /// Lifecycle states drawn on top of (or instead of) the theme renderer,
@@ -330,7 +292,7 @@ private final class HudView: NSView {
     }
 
     private let renderer: HudRenderer
-    private var phase: Phase = .live
+    private(set) var phase: Phase = .live
     private var phaseStart: CGFloat = 0 // `time` when the phase was entered
     private var latchedLevel: CGFloat = 0
     private var latchedSpectrum = [CGFloat](repeating: 0, count: 12)
@@ -340,8 +302,14 @@ private final class HudView: NSView {
     private var agcSpeechPeak: CGFloat = 0.3
     private var agcNoiseFloor: CGFloat = 0.05
     private var lastLevelIngest: TimeInterval = 0
-    private var time: CGFloat = 0
+    private(set) var time: CGFloat = 0 // seconds since reset(), i.e. since the HUD appeared
     private var timer: Timer?
+    /// Runs after every frame step, so the transcript panel's caret and
+    /// timer share the HUD's clock.
+    var onTick: (() -> Void)?
+
+    /// Seconds the dictation has run, frozen once processing starts.
+    var elapsed: CGFloat { phase == .processing ? phaseStart : time }
 
     init(frame: NSRect, renderer: HudRenderer) {
         self.renderer = renderer
@@ -438,7 +406,7 @@ private final class HudView: NSView {
         timer = nil
     }
 
-    private func tick() {
+    func tick() {
         time += 1.0 / 30.0
         frameLevel = min(1, latchedLevel)
         latchedLevel = 0
@@ -447,6 +415,7 @@ private final class HudView: NSView {
         // and a hard clear makes spectrum-driven themes strobe.
         for i in latchedSpectrum.indices { latchedSpectrum[i] *= 0.55 }
         needsDisplay = true
+        onTick?()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -519,52 +488,459 @@ private final class HudView: NSView {
     }
 }
 
-/// One line of raw transcript under the capsule, head-truncated so the newest
-/// words stay visible. Same dark fill as the waiting backdrop so white text
-/// reads on light themes and over bare themes on any desktop.
-private final class TranscriptStripView: NSView {
-    private static let font = NSFont.systemFont(ofSize: 12)
-    private static let padding: CGFloat = 10
+/// Which side of the capsule the transcript panel opens on. Above is the
+/// default; below is for a capsule parked near the top of its screen, where
+/// growing upward would run off the edge.
+enum TranscriptPlacement {
+    case above, below
+}
 
-    var text = "" {
+/// Pure geometry for the HUD window. The window is the capsule plus, when
+/// live transcript is on, a reserve of `gap + panelMaxHeight` on the
+/// panel's side, so the panel can open without moving or resizing the
+/// window. `Settings.hudOrigin` is always the capsule's bottom-left.
+enum HudLayout {
+    static let gap: CGFloat = 6
+    static let fontSize: CGFloat = 15
+    static let lineHeight: CGFloat = fontSize * 1.35
+    static let maxLines = 3
+    /// Padding on the panel's edge away from the capsule and next to it.
+    static let farPadding: CGFloat = 12
+    static let nearPadding: CGFloat = 10
+    static let sidePadding: CGFloat = 14
+
+    /// Panel height for `lineCount` wrapped lines: 0 while closed, capped at
+    /// `maxLines` (older lines scroll off under the top fade).
+    static func panelHeight(lineCount: Int) -> CGFloat {
+        guard lineCount > 0 else { return 0 }
+        let lines = CGFloat(min(lineCount, maxLines))
+        return ceil(farPadding + lines * lineHeight + nearPadding)
+    }
+
+    static var panelMaxHeight: CGFloat { panelHeight(lineCount: maxLines) }
+
+    /// Extra window height beyond the capsule.
+    static func reserve(liveTranscript: Bool) -> CGFloat {
+        liveTranscript ? gap + panelMaxHeight : 0
+    }
+
+    static func windowSize(capsule: NSSize, reserve: CGFloat) -> NSSize {
+        NSSize(width: capsule.width, height: capsule.height + reserve)
+    }
+
+    /// The capsule sits at the bottom of the window when the panel opens
+    /// above it, and at the top when the panel opens below.
+    static func capsuleOffset(placement: TranscriptPlacement, reserve: CGFloat) -> CGFloat {
+        placement == .below ? reserve : 0
+    }
+
+    static func windowOrigin(capsuleOrigin: NSPoint, placement: TranscriptPlacement,
+                             reserve: CGFloat) -> NSPoint {
+        NSPoint(x: capsuleOrigin.x,
+                y: capsuleOrigin.y - capsuleOffset(placement: placement, reserve: reserve))
+    }
+
+    static func capsuleOrigin(windowOrigin: NSPoint, placement: TranscriptPlacement,
+                              reserve: CGFloat) -> NSPoint {
+        NSPoint(x: windowOrigin.x,
+                y: windowOrigin.y + capsuleOffset(placement: placement, reserve: reserve))
+    }
+
+    /// Opens the panel below the capsule when there isn't room for it above
+    /// on the capsule's screen (the visible frame, so the menu bar counts).
+    static func placement(capsuleFrame: NSRect, reserve: CGFloat,
+                          screens: [NSRect]) -> TranscriptPlacement {
+        guard reserve > 0 else { return .above }
+        let center = NSPoint(x: capsuleFrame.midX, y: capsuleFrame.midY)
+        guard let screen = screens.first(where: { $0.contains(center) })
+                ?? screens.first(where: { $0.intersects(capsuleFrame) }) else { return .above }
+        return capsuleFrame.maxY + reserve > screen.maxY ? .below : .above
+    }
+}
+
+/// Everything inside the HUD window: the theme's capsule, unchanged, and,
+/// when live transcript is on, the transcript panel in the reserved space.
+final class HudContentView: NSView {
+    let theme: HudTheme
+    let showsTranscript: Bool
+    let hudView: HudView
+    let reserve: CGFloat
+    private let capsule: NSView
+    private let transcript: TranscriptPanelView?
+    private var panelOpen = false
+
+    var placement: TranscriptPlacement = .above {
         didSet {
-            guard text != oldValue else { return }
-            needsDisplay = true
-            if text.isEmpty {
-                alphaValue = 0
-            } else if oldValue.isEmpty {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = 0.2
-                    animator().alphaValue = 1
-                }
-            }
+            guard placement != oldValue else { return }
+            layoutPieces()
         }
     }
 
-    override init(frame: NSRect) {
-        super.init(frame: frame)
-        wantsLayer = true
-        alphaValue = 0
+    init(theme: HudTheme, liveTranscript: Bool) {
+        self.theme = theme
+        showsTranscript = liveTranscript
+        reserve = HudLayout.reserve(liveTranscript: liveTranscript)
+        let size = theme.size
+        let bounds = NSRect(origin: .zero, size: size)
+        hudView = HudView(frame: bounds, renderer: theme.makeRenderer())
+        hudView.autoresizingMask = [.width, .height]
+        capsule = Self.makeCapsule(theme: theme, hudView: hudView, bounds: bounds)
+        transcript = liveTranscript ? TranscriptPanelView(theme: theme, width: size.width) : nil
+        super.init(frame: NSRect(origin: .zero,
+                                 size: HudLayout.windowSize(capsule: size, reserve: reserve)))
+        addSubview(capsule)
+        if let transcript { addSubview(transcript) }
+        hudView.onTick = { [weak self] in self?.tick() }
+        layoutPieces()
     }
 
-    required init?(coder: NSCoder) { nil }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    private static func makeCapsule(theme: HudTheme, hudView: HudView, bounds: NSRect) -> NSView {
+        guard let surface = makeSurface(theme: theme, frame: bounds,
+                                        cornerRadius: bounds.height / 2) else {
+            let bare = NSView(frame: bounds)
+            bare.addSubview(hudView)
+            return bare
+        }
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *), let glass = surface as? NSGlassEffectView {
+            glass.contentView = hudView
+            return glass
+        }
+        #endif
+        surface.addSubview(hudView)
+        return surface
+    }
+
+    /// The theme's background: system glass for Liquid Glass, a frosted blur
+    /// with a hairline for the rest, nil for bare themes. Shared by the
+    /// capsule and the transcript panel so the two pieces read as one card.
+    static func makeSurface(theme: HudTheme, frame: NSRect, cornerRadius: CGFloat) -> NSView? {
+        if theme.isBare { return nil }
+        if theme == .liquidGlass {
+            #if compiler(>=6.2)
+            if #available(macOS 26.0, *) {
+                let glass = NSGlassEffectView(frame: frame)
+                glass.style = .regular
+                glass.cornerRadius = cornerRadius
+                glass.tintColor = NSColor.white.withAlphaComponent(0.025)
+                glass.wantsLayer = true
+                glass.layer?.cornerRadius = cornerRadius
+                glass.layer?.cornerCurve = .continuous
+                glass.layer?.masksToBounds = true
+                return glass
+            }
+            #endif
+        }
+        let blur = NSVisualEffectView(frame: frame)
+        blur.material = .hudWindow
+        blur.state = .active
+        blur.blendingMode = .behindWindow
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = cornerRadius
+        blur.layer?.cornerCurve = .continuous
+        blur.layer?.masksToBounds = true
+        blur.layer?.borderWidth = 1
+        blur.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+        return blur
+    }
+
+    func setPhase(_ phase: HudView.Phase) {
+        hudView.setPhase(phase)
+        tick()
+    }
+
+    /// Opens the panel on the first non-empty text, then tracks its line
+    /// count. Empty text closes it at once (a new dictation starting).
+    func setTranscript(_ rawText: String, animated: Bool) {
+        guard let transcript else { return }
+        let text = rawText.replacingOccurrences(of: "\n", with: " ")
+        transcript.text = text
+        tick()
+        let height = HudLayout.panelHeight(lineCount: text.isEmpty ? 0 : transcript.lineCount)
+        guard height > 0 else {
+            panelOpen = false
+            transcript.alphaValue = 0
+            transcript.frame = panelFrame(height: 0)
+            return
+        }
+        let opening = !panelOpen
+        panelOpen = true
+        guard animated else {
+            transcript.alphaValue = 1
+            transcript.frame = panelFrame(height: height)
+            return
+        }
+        if opening {
+            // Pop in from slightly narrower, anchored on the capsule side.
+            transcript.frame = panelFrame(height: 0, widthScale: 0.96)
+            transcript.alphaValue = 0
+        } else if transcript.frame.height == height {
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = opening ? 0.3 : 0.2
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.22, 1, 0.36, 1)
+            transcript.animator().frame = panelFrame(height: height)
+            transcript.animator().alphaValue = 1
+        }
+    }
+
+    /// The reserved space must not swallow clicks meant for whatever is
+    /// under it: only the capsule and an open panel are hit-testable.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = superview.map { convert(point, from: $0) } ?? point
+        let inPanel = openTranscriptFrame?.contains(local) ?? false
+        guard capsule.frame.contains(local) || inPanel else { return nil }
+        return super.hitTest(point)
+    }
+
+    var capsuleFrame: NSRect { capsule.frame }
+
+    /// The transcript panel's frame while it is open; nil while closed.
+    var openTranscriptFrame: NSRect? { panelOpen ? transcript?.frame : nil }
+
+    private func layoutPieces() {
+        capsule.setFrameOrigin(NSPoint(
+            x: 0, y: HudLayout.capsuleOffset(placement: placement, reserve: reserve)))
+        guard let transcript else { return }
+        transcript.placement = placement
+        transcript.frame = panelFrame(height: transcript.frame.height)
+    }
+
+    private func panelFrame(height: CGFloat, widthScale: CGFloat = 1) -> NSRect {
+        let width = (bounds.width * widthScale).rounded()
+        let x = ((bounds.width - width) / 2).rounded()
+        switch placement {
+        case .above:
+            return NSRect(x: x, y: capsule.frame.maxY + HudLayout.gap, width: width, height: height)
+        case .below:
+            return NSRect(x: x, y: capsule.frame.minY - HudLayout.gap - height,
+                          width: width, height: height)
+        }
+    }
+
+    private func tick() {
+        transcript?.update(time: hudView.time, elapsed: hudView.elapsed,
+                           listening: hudView.phase != .processing)
+    }
+}
+
+/// Live transcript above (or below) the capsule, after Handy's Live
+/// overlay: up to three wrapped lines of 15 pt italic, newest at the bottom,
+/// older lines dissolving under a top fade once they overflow, a blinking
+/// caret while listening, and the elapsed time in the corner.
+private final class TranscriptPanelView: NSView {
+    private static let font: NSFont = {
+        let base = NSFont.systemFont(ofSize: HudLayout.fontSize)
+        let italic = base.fontDescriptor.withSymbolicTraits(.italic)
+        return NSFont(descriptor: italic, size: HudLayout.fontSize) ?? base
+    }()
+    private static let timerFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+    private static let fadeHeight: CGFloat = 18
+    private static let caretBlink: CGFloat = 1.05
+
+    var placement: TranscriptPlacement = .above {
+        didSet {
+            // Keep the text pinned to the capsule side while the open
+            // animation resizes the panel.
+            let anchor: NSView.LayerContentsPlacement = placement == .above ? .bottom : .top
+            layerContentsPlacement = anchor
+            subviews.forEach { $0.layerContentsPlacement = anchor }
+            redraw()
+        }
+    }
+    private(set) var lineCount = 0
+    var text = "" {
+        didSet {
+            guard text != oldValue else { return }
+            relayout()
+            redraw()
+        }
+    }
+
+    private let bare: Bool
+    /// Text is laid out at the panel's full width even while the pop-in
+    /// animation runs narrower, so lines don't reflow mid-animation.
+    private let layoutWidth: CGFloat
+    private let timerReserve: CGFloat
+    private let storage = NSTextStorage()
+    private let layoutManager = NSLayoutManager()
+    private let container: NSTextContainer
+    private var caretOn = true
+    private var listening = true
+    private var elapsedSeconds = 0
+
+    override var isFlipped: Bool { true }
+
+    init(theme: HudTheme, width: CGFloat) {
+        bare = theme.isBare
+        layoutWidth = width - HudLayout.sidePadding * 2
+        // Sized for "m:ss"; past ten minutes the wider timer can touch a full
+        // last line, which isn't worth a reflow every minute.
+        timerReserve = ceil(("0:00" as NSString).size(withAttributes: [.font: Self.timerFont]).width) + 6
+        container = NSTextContainer(size: NSSize(width: layoutWidth,
+                                                 height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        layoutManager.addTextContainer(container)
+        storage.addLayoutManager(layoutManager)
+        super.init(frame: NSRect(x: 0, y: 0, width: width, height: 0))
+        wantsLayer = true
+        layer?.cornerRadius = 16
+        layer?.cornerCurve = .continuous
+        layer?.masksToBounds = true
+        layerContentsRedrawPolicy = .duringViewResize
+        layerContentsPlacement = .bottom
+        alphaValue = 0
+        if let surface = HudContentView.makeSurface(theme: theme, frame: bounds, cornerRadius: 16) {
+            surface.autoresizingMask = [.width, .height]
+            addSubview(surface)
+            let ink = TranscriptInkView(frame: bounds)
+            ink.autoresizingMask = [.width, .height]
+            ink.layerContentsRedrawPolicy = .duringViewResize
+            ink.layerContentsPlacement = .bottom
+            ink.panel = self
+            addSubview(ink)
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    /// Called every HUD frame: steps the caret blink and the timer, and
+    /// redraws only when one of them visibly changed.
+    func update(time: CGFloat, elapsed: CGFloat, listening: Bool) {
+        let caretOn = (time / (Self.caretBlink / 2)).truncatingRemainder(dividingBy: 2) < 1
+        let seconds = Int(elapsed)
+        guard caretOn != self.caretOn || seconds != elapsedSeconds
+                || listening != self.listening else { return }
+        self.caretOn = caretOn
+        self.elapsedSeconds = seconds
+        self.listening = listening
+        redraw()
+    }
+
+    private func redraw() {
+        needsDisplay = true
+        subviews.forEach { $0.needsDisplay = true }
+    }
+
+    private func relayout() {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.minimumLineHeight = HudLayout.lineHeight
+        paragraph.maximumLineHeight = HudLayout.lineHeight
+        paragraph.lineBreakMode = .byWordWrapping
+        let natural = Self.font.ascender - Self.font.descender
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: Self.font,
+            .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+            .paragraphStyle: paragraph,
+            .kern: -0.003 * HudLayout.fontSize,
+            // TextKit puts extra line height above the glyphs; split it.
+            .baselineOffset: (HudLayout.lineHeight - natural) / 2,
+        ]
+        let string = NSMutableAttributedString(string: text, attributes: attributes)
+        if !text.isEmpty {
+            // A no-break space glued to the last word, widened by kerning,
+            // keeps room on the last line for the caret and the timer.
+            var tail = attributes
+            tail[.kern] = timerReserve
+            string.append(NSAttributedString(string: "\u{00A0}", attributes: tail))
+        }
+        storage.setAttributedString(string)
+        layoutManager.ensureLayout(for: container)
+        var count = 0
+        let glyphs = layoutManager.glyphRange(for: container)
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphs) { _, _, _, _, _ in
+            count += 1
+        }
+        lineCount = text.isEmpty ? 0 : count
+    }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard !text.isEmpty else { return }
-        let radius = bounds.height / 2
-        NSColor.black.withAlphaComponent(0.55).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+        guard bare, lineCount > 0 else { return }
+        // Bare themes have no frosted surface to match, so the panel gets a
+        // near-opaque fill that keeps text readable on any desktop.
+        let path = NSBezierPath(roundedRect: bounds, xRadius: 16, yRadius: 16)
+        NSColor.black.withAlphaComponent(0.78).setFill()
+        path.fill()
+        drawInk()
+    }
 
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingHead
-        let font = Self.font
-        let lineHeight = ceil(font.ascender - font.descender + font.leading)
-        let rect = NSRect(x: Self.padding, y: (bounds.height - lineHeight) / 2,
-                          width: bounds.width - Self.padding * 2, height: lineHeight)
-        (text as NSString).draw(in: rect, withAttributes: [
-            .font: font,
-            .foregroundColor: NSColor.white,
-            .paragraphStyle: paragraph,
-        ])
+    /// Text, caret, fade and timer. Shared by the bare panel's own draw and
+    /// the ink view layered over the surface.
+    func drawInk() {
+        guard lineCount > 0, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        if bare {
+            let border = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                      xRadius: 15.5, yRadius: 15.5)
+            NSColor.white.withAlphaComponent(0.14).setStroke()
+            border.lineWidth = 1
+            border.stroke()
+        }
+        let topPadding = placement == .above ? HudLayout.farPadding : HudLayout.nearPadding
+        let bottomPadding = placement == .above ? HudLayout.nearPadding : HudLayout.farPadding
+        let overflowing = lineCount > HudLayout.maxLines
+        let blockHeight = CGFloat(lineCount) * HudLayout.lineHeight
+        // Anchored on the capsule's side while it fits; pinned to the newest
+        // line at the bottom once it overflows.
+        let originY = placement == .below && !overflowing
+            ? topPadding
+            : bounds.height - bottomPadding - blockHeight
+        let origin = NSPoint(x: ((bounds.width - layoutWidth) / 2).rounded(), y: originY)
+
+        let glyphs = layoutManager.glyphRange(for: container)
+        let tailGlyph = layoutManager.glyphIndexForCharacter(at: storage.length - 1)
+        let tailLine = layoutManager.lineFragmentRect(forGlyphAt: tailGlyph, effectiveRange: nil)
+        let tailLocation = layoutManager.location(forGlyphAt: tailGlyph)
+        let baseline = origin.y + tailLine.minY + tailLocation.y
+
+        ctx.saveGState()
+        ctx.clip(to: bounds)
+        ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+        layoutManager.drawGlyphs(forGlyphRange: glyphs, at: origin)
+        if listening && caretOn {
+            // 2 pt wide, 1.02 em tall, sitting 3 pt below the baseline.
+            let height = 1.02 * HudLayout.fontSize
+            let caret = NSRect(x: origin.x + tailLine.minX + tailLocation.x + 1,
+                               y: baseline + 3 - height, width: 2, height: height)
+            NSColor.controlAccentColor.setFill()
+            NSBezierPath(roundedRect: caret, xRadius: 1, yRadius: 1).fill()
+        }
+        if overflowing {
+            // Older lines dissolve under the top edge.
+            let colors = [NSColor.black.cgColor, NSColor.black.withAlphaComponent(0).cgColor]
+            if let gradient = CGGradient(colorsSpace: nil, colors: colors as CFArray,
+                                         locations: [0, 1]) {
+                ctx.setBlendMode(.destinationOut)
+                ctx.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0),
+                                       end: CGPoint(x: 0, y: Self.fadeHeight), options: [])
+            }
+        }
+        ctx.endTransparencyLayer()
+        ctx.restoreGState()
+
+        let timer = String(format: "%d:%02d", elapsedSeconds / 60, elapsedSeconds % 60)
+        let timerAttributes: [NSAttributedString.Key: Any] = [
+            .font: Self.timerFont,
+            .foregroundColor: NSColor.white.withAlphaComponent(0.6),
+        ]
+        let timerWidth = (timer as NSString).size(withAttributes: timerAttributes).width
+        let timerX = bounds.width - (bounds.width - layoutWidth) / 2 - timerWidth
+        (timer as NSString).draw(at: NSPoint(x: timerX, y: baseline - Self.timerFont.ascender),
+                                 withAttributes: timerAttributes)
+    }
+}
+
+/// Draws the panel's text above its surface view (a view's own drawing sits
+/// under its subviews, so the surface would cover it).
+private final class TranscriptInkView: NSView {
+    weak var panel: TranscriptPanelView?
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        panel?.drawInk()
     }
 }

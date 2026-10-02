@@ -511,7 +511,11 @@ a folder shortcut, and **Delete All History**.
 - In Secure Input fields (password boxes), LocalFlow avoids the clipboard and
   falls back to synthesized keystrokes, which some apps ignore.
 - Live text is raw and lags. While the key is held, finished chunks show
-  under the HUD without corrections or cleanup. With Whisper the first chunk
+  in a panel that opens above the HUD, without corrections or cleanup. It
+  holds up to three lines with the newest at the bottom, and older lines fade
+  out under the top edge. A blinking caret marks the end while you talk, and
+  the elapsed time sits in the corner. If the HUD is parked near the top of
+  the screen, the panel opens below it instead. With Whisper the first chunk
   is tried at 8 seconds and then every 4 seconds. Parakeet is faster, so it
   starts at 4 seconds and ticks every 2. Parakeet also re-reads the words
   after the last finished chunk every second from 1 second in, so text shows
