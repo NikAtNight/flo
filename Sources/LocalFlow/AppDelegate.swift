@@ -291,6 +291,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A pending clipboard restore can hold quit for up to 10 s when
+        // nothing reads the paste. Restore now, which also ends that delivery.
+        if !isRecording && pendingAudioHandoffs == 0 {
+            TextInjector.restoreNow()
+        }
         let reply = Self.terminationReply(
             isRecording: isRecording, pendingAudioHandoffs: pendingAudioHandoffs,
             deliveryIsBusy: dictationDelivery.isBusy

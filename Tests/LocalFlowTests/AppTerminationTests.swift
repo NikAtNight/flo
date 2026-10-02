@@ -21,6 +21,31 @@ final class AppTerminationTests: XCTestCase {
         }
     }
 
+    func testRestoringPendingClipboardLetsQuitProceed() {
+        let board = NSPasteboard(name: NSPasteboard.Name("LocalFlowTests.\(UUID().uuidString)"))
+        defer {
+            TextInjector.restoreNow()
+            board.releaseGlobally()
+        }
+        board.clearContents()
+        board.setString("user clipboard", forType: .string)
+        var deliveryIsBusy = true
+        TextInjector.inject(
+            "dictated", pasteboard: board, isSecureInputEnabled: { false }, postPaste: { true },
+            schedule: { _, _ in }
+        ) { _ in deliveryIsBusy = false }
+        XCTAssertEqual(AppDelegate.terminationReply(
+            isRecording: false, pendingAudioHandoffs: 0, deliveryIsBusy: deliveryIsBusy
+        ), .terminateCancel)
+
+        TextInjector.restoreNow()
+
+        XCTAssertEqual(board.string(forType: .string), "user clipboard")
+        XCTAssertEqual(AppDelegate.terminationReply(
+            isRecording: false, pendingAudioHandoffs: 0, deliveryIsBusy: deliveryIsBusy
+        ), .terminateNow)
+    }
+
     func testIdleAppCanQuit() {
         XCTAssertEqual(AppDelegate.terminationReply(
             isRecording: false, pendingAudioHandoffs: 0,
