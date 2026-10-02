@@ -287,6 +287,33 @@ final class DictationSessionStallTests: XCTestCase {
         XCTAssertEqual(loads, 1)
     }
 
+    func testVocabularyChangedDuringLoadIsAppliedBeforeFirstTranscription() async throws {
+        let suspended = SuspendedLoad()
+        let engine = FakeEngine()
+        engine.inference = { syntheticResult("words") }
+        let transcriber = Transcriber(modelLoader: { _, _ in
+            await suspended.wait()
+            return engine
+        })
+        await transcriber.setVocabulary("alpha")
+        let load = Task { try await transcriber.load(model: "test") }
+        for _ in 0..<200 {
+            if await suspended.isWaiting { break }
+            await Task.yield()
+        }
+        let waiting = await suspended.isWaiting
+        XCTAssertTrue(waiting)
+
+        await transcriber.setVocabulary("beta")
+        await suspended.resume()
+        try await load.value
+        _ = try await transcriber.transcribe(samples: speech)
+
+        XCTAssertEqual(engine.calls.first, "vocabulary: beta")
+        XCTAssertEqual(engine.calls.last, "transcribe")
+        XCTAssertFalse(engine.calls.contains("vocabulary: alpha"))
+    }
+
     func testQueuedRequestUsesReplacementAfterOrdinaryModelSwitch() async throws {
         let blocked = NoncooperativeInference()
         let old = FakeEngine()
@@ -462,12 +489,31 @@ private actor StallCaseTranscriber {
 
 private final class FakeEngine: SpeechEngine, @unchecked Sendable {
     var inference: (() async throws -> EngineTranscription)?
+    /// Vocabulary terms and transcribe calls, in arrival order.
+    private(set) var calls: [String] = []
 
     func transcribe(samples: [Float], lowEnergy: Bool) async throws -> EngineTranscription {
-        try await inference?() ?? syntheticResult("")
+        calls.append("transcribe")
+        return try await inference?() ?? syntheticResult("")
     }
 
-    func setVocabulary(_ terms: String) async {}
+    func setVocabulary(_ terms: String) async {
+        calls.append("vocabulary: \(terms)")
+    }
+}
+
+private actor SuspendedLoad {
+    private var pending: CheckedContinuation<Void, Never>?
+    var isWaiting: Bool { pending != nil }
+
+    func wait() async {
+        await withCheckedContinuation { pending = $0 }
+    }
+
+    func resume() {
+        pending?.resume()
+        pending = nil
+    }
 }
 
 private actor NoncooperativeInference {
