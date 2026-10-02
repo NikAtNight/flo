@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.7.0](https://github.com/NikAtNight/localflow/compare/v1.6.2...v1.7.0) (2026-10-02)
+
+
+### Features
+
+* add Parakeet TDT 0.6B v3 engine through FluidAudio ([86b65ac](https://github.com/NikAtNight/localflow/commit/86b65acd590fad17c1da775bbaa94d49aa187d3c))
+* add Show live transcript in the HUD setting ([219efb5](https://github.com/NikAtNight/localflow/commit/219efb53ebe225c3eb2c74d971a11cdce5105b00))
+* draw a live transcript strip under the HUD capsule ([d88b012](https://github.com/NikAtNight/localflow/commit/d88b012bd5cd90918e8b5a23978b7fede3b9acac))
+* Escape cancels an in-progress dictation ([33c1c9c](https://github.com/NikAtNight/localflow/commit/33c1c9c57e9e2c78379cd3b8a6d689c5c54ff70d))
+* offer Parakeet in the Model menu and Settings ([63a743a](https://github.com/NikAtNight/localflow/commit/63a743a94b161f12d9c78a357542485bd0c23118))
+* pick the live-text chunk cadence from the speech engine ([48d5c81](https://github.com/NikAtNight/localflow/commit/48d5c8149546ccf973d1d6264cf5f815efc6ecd9))
+* report raw partial transcripts from the dictation pipeline ([dcf12e2](https://github.com/NikAtNight/localflow/commit/dcf12e2cc03998c3d36e30d22783d3b7dcf78baf))
+* restore clipboard after the paste is read, not on a fixed timer ([bb9ffae](https://github.com/NikAtNight/localflow/commit/bb9ffaeab7a4afd9ccbac77f083d12f76d0e5b55))
+* show live transcript text in the HUD while dictating ([3bdb301](https://github.com/NikAtNight/localflow/commit/3bdb301f6db0a89d47ffe2cb701ae87e3cad8d6c))
+* show Parakeet preview text in the HUD every second ([d104f5c](https://github.com/NikAtNight/localflow/commit/d104f5c7b77cfda55a57b5834494f7eba3db78f3))
+* show the live transcript in a Handy-style panel above the HUD ([fd81fb6](https://github.com/NikAtNight/localflow/commit/fd81fb64ad7312a5d5b90180483301a230975d37))
+
+
+### Fixes
+
+* keep each Parakeet segment's start at or before its end ([e56e1d1](https://github.com/NikAtNight/localflow/commit/e56e1d1123a36f9ac9be5b67fbacccdd6efc6ea3))
+* keep the speech model loaded when Escape cancels a dictation ([bfad00d](https://github.com/NikAtNight/localflow/commit/bfad00df2c2d7a2337c8438234c8a8ce007b7071))
+* let Escape cancel while Right Command is the held hotkey ([16d8cbf](https://github.com/NikAtNight/localflow/commit/16d8cbf31f781a9d1979b37a4dbf8f2f95bb0387))
+* log a disabled Escape tap only while it should be on ([ce99886](https://github.com/NikAtNight/localflow/commit/ce998863b419a417c7dbc31cb8806b19b147e8b2))
+* measure Parakeet pauses the way FluidAudio reports them ([1f71feb](https://github.com/NikAtNight/localflow/commit/1f71feb968f995519447778b19cc50dc9807e860))
+* name the speech model, not Whisper, in errors and drop em dashes ([24ba624](https://github.com/NikAtNight/localflow/commit/24ba624b2689f4907609187b4d7b79145c12ea54))
+* recreate the Escape tap after macOS invalidates it ([eb5cf4d](https://github.com/NikAtNight/localflow/commit/eb5cf4d32f9bdd9b75b7e7a5fdb6e14557bfeac3))
+* restore a pending clipboard at quit instead of refusing for up to 10 s ([b8ead55](https://github.com/NikAtNight/localflow/commit/b8ead5506c2a7bf7c19f04e94febf45d5de81ef8))
+* skip the command-mode AX warmup while a paste awaits its read ([af978d0](https://github.com/NikAtNight/localflow/commit/af978d08d0be3c6e3038d023b14f0781d0029078))
+* stop restoring the clipboard early at quit ([4b5e4cb](https://github.com/NikAtNight/localflow/commit/4b5e4cbc7121f2f3359ac7f19f8a9651e90f51c1))
+
 ## [1.6.2](https://github.com/NikAtNight/localflow/compare/v1.6.1...v1.6.2) (2026-10-01)
 
 
