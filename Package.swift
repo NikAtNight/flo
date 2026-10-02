@@ -13,14 +13,18 @@ let package = Package(
         .package(url: "https://github.com/argmaxinc/argmax-oss-swift.git", from: "1.0.0"),
         // In-app updates. Sparkle ships as a binary framework, so
         // scripts/make-app.sh embeds and signs it into the bundle.
-        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0"),
+        // Parakeet speech recognition on CoreML. Pinned to the minor: the
+        // package is pre-1.0 and ships breaking changes in minor releases.
+        .package(url: "https://github.com/FluidInference/FluidAudio.git", .upToNextMinor(from: "0.17.5"))
     ],
     targets: [
         .executableTarget(
             name: "LocalFlow",
             dependencies: [
                 .product(name: "WhisperKit", package: "argmax-oss-swift"),
-                .product(name: "Sparkle", package: "Sparkle")
+                .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "FluidAudio", package: "FluidAudio")
             ],
             path: "Sources/LocalFlow"
         ),
