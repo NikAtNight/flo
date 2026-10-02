@@ -88,7 +88,7 @@ struct LocalFlowMain {
 
     /// Headless mode for testing and latency benchmarking:
     ///   LocalFlow --transcribe recording.wav
-    /// Loads the configured Whisper model and transcribes the full file,
+    /// Loads the configured speech model and transcribes the full file,
     /// including corrections, voice formatting, and optional cleanup. Prints
     /// per-stage timings to stderr and the final text to stdout.
     private static func transcribeFile(_ path: String, cleanupEnabled: Bool) {
