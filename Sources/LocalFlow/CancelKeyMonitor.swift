@@ -136,7 +136,10 @@ final class CancelKeyMonitor {
     private func handle(type: CGEventType, event: CGEvent) -> Bool {
         // macOS disables taps that stall; re-enable if we still want it on.
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-            if wantsEnabled, let threadTap { CGEvent.tapEnable(tap: threadTap, enable: true) }
+            // The paste's synthesized Cmd+V disables the just-deactivated
+            // tap every time, so only a disable that matters is logged.
+            guard wantsEnabled else { return false }
+            if let threadTap { CGEvent.tapEnable(tap: threadTap, enable: true) }
             DispatchQueue.main.async {
                 DiagLog.log("cancel key tap disabled by system (%d)", type.rawValue)
             }
