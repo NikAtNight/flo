@@ -412,10 +412,51 @@ final class DictationSessionPipelineTests: XCTestCase {
         expectEqual(await cleaner.requestTexts(), ["Current speech."])
     }
 
+    func testPartialTranscriptFiresPerChunkAndAfterTailButNotAfterCancel() async {
+        let transcriber = ControlledTranscriber()
+        let cleaner = RecordingCleaner(mode: .replaceWith("Cleaned."))
+        let outcomes = OutcomeRecorder()
+        var partials: [PartialTranscript] = []
+        let pipeline = makePipeline(transcriber: transcriber, cleaner: cleaner, outcomes: outcomes) {
+            partials.append(PartialTranscript(generation: $0, text: $1))
+        }
+
+        pipeline.begin(generation: 70, context: context())
+        pipeline.processIncrementalChunk(generation: 70, samples: speech, pauseSecondsAfterChunk: 0.4)
+        expectTrue(await waitForCall(.incrementalChunk(index: 0), generation: 70, in: transcriber))
+        expectTrue(await transcriber.succeed("first", segment: .incrementalChunk(index: 0), generation: 70))
+        await settleAsyncWork()
+        pipeline.processIncrementalChunk(generation: 70, samples: speech, pauseSecondsAfterChunk: 0.4)
+        expectTrue(await waitForCall(.incrementalChunk(index: 1), generation: 70, in: transcriber))
+        expectTrue(await transcriber.succeed("second", segment: .incrementalChunk(index: 1), generation: 70))
+        await settleAsyncWork()
+        XCTAssertEqual(partials, [
+            PartialTranscript(generation: 70, text: "first"),
+            PartialTranscript(generation: 70, text: "first second"),
+        ])
+
+        pipeline.release(generation: 70, fullSamples: speech + speech + speech, tailSamples: speech)
+        expectTrue(await waitForCall(.releaseTail, generation: 70, in: transcriber))
+        expectTrue(await transcriber.succeed("third", segment: .releaseTail, generation: 70))
+        expectTrue(await waitForOutcomes(1, in: outcomes))
+        // The strip shows raw engine text. Cleanup output never reaches it.
+        XCTAssertEqual(partials.last, PartialTranscript(generation: 70, text: "first second third"))
+        XCTAssertEqual(partials.count, 3)
+
+        pipeline.begin(generation: 71, context: context())
+        pipeline.processIncrementalChunk(generation: 71, samples: speech, pauseSecondsAfterChunk: 0.4)
+        expectTrue(await waitForCall(.incrementalChunk(index: 0), generation: 71, in: transcriber))
+        pipeline.cancel(generation: 71)
+        expectTrue(await transcriber.succeed("stale", segment: .incrementalChunk(index: 0), generation: 71))
+        await settleAsyncWork()
+        XCTAssertFalse(partials.contains { $0.generation == 71 })
+    }
+
     private func makePipeline(
         transcriber: ControlledTranscriber,
         cleaner: RecordingCleaner,
-        outcomes: OutcomeRecorder
+        outcomes: OutcomeRecorder,
+        onPartialTranscript: ((Int, String) -> Void)? = nil
     ) -> DictationSessionPipeline {
         DictationSessionPipeline(
             transcribe: { request in
@@ -426,7 +467,8 @@ final class DictationSessionPipelineTests: XCTestCase {
             },
             onOutcome: { outcome in
                 outcomes.append(outcome)
-            }
+            },
+            onPartialTranscript: onPartialTranscript
         )
     }
 
@@ -492,6 +534,11 @@ final class DictationSessionPipelineTests: XCTestCase {
 
 private enum TestError: Error {
     case decodeFailed
+}
+
+private struct PartialTranscript: Equatable {
+    let generation: Int
+    let text: String
 }
 
 private actor ControlledTranscriber {
