@@ -77,10 +77,10 @@ final class DictationDelivery {
         inject: @escaping Inject,
         recordTranscript: @escaping (String) -> Void,
         onOutcome: @escaping (DictationSessionOutcome, Release) -> Void,
+        onPartialTranscript: @escaping (Int, String) -> Void = { _, _ in },
         onCancelled: @escaping (Release) -> Void,
         onCommandCancelled: @escaping (Int) -> Void,
         onProcessingCountChange: @escaping (Int) -> Void,
-        onPartialTranscript: @escaping (Int, String) -> Void = { _, _ in },
         stallTimeout: TimeInterval = 90,
         injectionInterval: TimeInterval = 0.4
     ) {

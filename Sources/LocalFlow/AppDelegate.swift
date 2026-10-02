@@ -180,6 +180,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let textModelPolicy = LocalTextModelPolicy.shared
 
     private var activeDictationGeneration: Int?
+    /// The dictation whose raw text the HUD strip shows, tied to the press
+    /// that owns the HUD so any newer press (dictation or command) drops it.
+    private var hudDictationGeneration: (dictation: Int, hud: Int)?
     private var activeDictationTrace: DictationTrace?
     private var incrementalTimer: DispatchWorkItem?
     private lazy var dictationDelivery = DictationDelivery(
@@ -215,6 +218,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recordTranscript: { [weak self] text in self?.rememberTranscript(text) },
         onOutcome: { [weak self] outcome, release in
             self?.handleDictationOutcome(outcome, release: release)
+        },
+        onPartialTranscript: { [weak self] generation, text in
+            guard let self, Settings.liveTranscript,
+                  let owner = self.hudDictationGeneration,
+                  owner.dictation == generation, owner.hud == self.recordingGeneration else { return }
+            self.overlay.showTranscript(text)
         },
         onCancelled: { [weak self] release in self?.dismissHud(release.hudGeneration) },
         onCommandCancelled: { [weak self] sequence in self?.cancelCommand(sequence) },
@@ -844,6 +853,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             personalVoice: personalVoiceRecording(context: context, trace: activeDictationTrace)
         ))
         activeDictationGeneration = generation
+        hudDictationGeneration = (dictation: generation, hud: recordingGeneration)
         scheduleIncrementalTick(generation: generation, after: DictationSessionPipeline.incrementalStartSeconds)
     }
 
@@ -998,6 +1008,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// retry).
     private func dismissHud(_ generation: Int?) {
         guard let generation, generation == recordingGeneration else { return }
+        hudDictationGeneration = nil
         overlay.hide()
     }
 
