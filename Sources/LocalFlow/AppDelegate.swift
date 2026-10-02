@@ -169,6 +169,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let updates = UpdateController()
     private let hotkey = HotkeyManager()
     private let commandHotkey = HotkeyManager()
+    private let cancelKey = CancelKeyMonitor()
+    /// The released dictation that Escape can still cancel while its HUD
+    /// shows the processing dots. Cleared once the HUD goes away.
+    private var releasedDictation: (generation: Int, hudGeneration: Int)?
     private var commandHotkeyActive = false
     /// True while the in-flight recording is a command-mode utterance
     /// rather than a dictation. Both share one recorder, so only one can be
@@ -339,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.recordingGeneration += 1
                 self.cancelActiveDictationSession()
                 self.overlay.hide()
+                self.cancelKey.deactivate()
                 self.playCue("Basso")
                 self.state = .failed(UserFacingIssue(
                     summary: "Microphone stopped",
@@ -440,9 +445,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// result minutes later at wake, into whatever happens to have focus,
     /// would be worse than losing a dictation the user watched get cut off.
     private func abortRecording(reason: String) {
+        discardActiveRecording(reason: reason)
+        // Sleep must not carry an open mic through the nap — release any
+        // warm session too (queued after stop, so it sees the idle state).
+        recorder.releaseWarmSession()
+    }
+
+    /// Drops the held recording without transcribing it. Shared by
+    /// `abortRecording` (sleep, user switch) and the Escape key.
+    private func discardActiveRecording(reason: String) {
         hotkey.cancelHold()
         commandHotkey.cancelHold()
         recordingIsCommand = false
+        cancelKey.deactivate()
         if isRecording {
             DiagLog.log("%@ while recording — discarding the recording", reason)
             isRecording = false
@@ -453,9 +468,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             activeDictationTrace = nil
             state = restingState
         }
-        // Sleep must not carry an open mic through the nap — release any
-        // warm session too (queued after stop, so it sees the idle state).
-        recorder.releaseWarmSession()
     }
 
     /// Login is handled by a LaunchAgent rather than a plain login item so
@@ -503,6 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkey.onPress = { [weak self] in self?.hotkeyPressed() }
         hotkey.onRelease = { [weak self] in self?.hotkeyReleased() }
         hotkey.onTapDied = { [weak self] in self?.hotkeyTapDied() }
+        cancelKey.onCancel = { [weak self] in self?.cancelFromKeyboard() }
         attemptHotkeyStart()
         startCommandHotkey()
     }
@@ -778,6 +791,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.recorder.stop { _ in }
                 }
                 self.overlay.hide()
+                self.cancelKey.deactivate()
                 self.playCue("Basso")
                 self.state = .failed(UserFacingIssue(
                     summary: "Couldn't start the microphone",
@@ -793,6 +807,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         state = .recording
         overlay.show()
+        cancelKey.activate()
         // Backstop against a hold that never ends (stuck key, pocket
         // dictation): cap the recording rather than run an open mic.
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.maxRecordingSeconds) { [weak self] in
@@ -968,6 +983,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recordingIsCommand = false
         let dictationGeneration = asCommand ? nil : activeDictationGeneration
         activeDictationGeneration = nil
+        releasedDictation = dictationGeneration.map { (generation: $0, hudGeneration: generation) }
         incrementalTimer?.cancel()
         incrementalTimer = nil
         pendingAudioHandoffs += 1
@@ -999,6 +1015,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func dismissHud(_ generation: Int?) {
         guard let generation, generation == recordingGeneration else { return }
         overlay.hide()
+        releasedDictation = nil
+        cancelKey.deactivate()
+    }
+
+    /// Escape: drop the held recording, or the released one if it hasn't
+    /// reached the injector yet. Too late once its text is queued to paste.
+    private func cancelFromKeyboard() {
+        if isRecording {
+            discardActiveRecording(reason: "Escape pressed")
+        } else if let released = releasedDictation {
+            dictationDelivery.cancel(generation: released.generation)
+            // Before the audio handoff there's no pending release, so
+            // cancel(generation:) can't fire onCancelled. Hide it here.
+            dismissHud(released.hudGeneration)
+        } else if let sequence = commandHudGenerations.first(where: { $0.value == recordingGeneration })?.key {
+            commandTasks[sequence]?.cancel()
+            completeCommand(sequence, with: .skip)
+            dismissHud(recordingGeneration)
+        } else {
+            return
+        }
+        DiagLog.log("dictation cancelled from keyboard")
     }
 
     private func process(
@@ -1072,6 +1110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleDictationOutcome(_ outcome: DictationSessionOutcome, release: DictationDelivery.Release) {
+        if releasedDictation?.hudGeneration == release.hudGeneration { releasedDictation = nil }
         dismissHud(release.hudGeneration)
         switch outcome {
         case .finalTranscript(_, let text):
