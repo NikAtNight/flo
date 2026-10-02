@@ -10,6 +10,13 @@ final class WaveformOverlay {
     private let panel: NSPanel
     private var hudView: HudView
     private var theme: HudTheme
+    // Live transcript strip under the capsule. The allowance is the extra
+    // panel height below the capsule; 0 when the setting is off.
+    private static let stripHeight: CGFloat = 24
+    private static let stripGap: CGFloat = 6
+    private var transcriptStrip: TranscriptStripView?
+    private var stripAllowance: CGFloat = 0
+    private var acceptsTranscript = false
     private var hideGeneration = 0
     private var previewTimer: Timer?
     // Distinguishes the app's own present/layout moves from a user drag —
@@ -52,7 +59,10 @@ final class WaveformOverlay {
         ) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !self.programmaticMove, self.panel.isVisible else { return }
-                Settings.hudOrigin = self.panel.frame.origin
+                // The saved origin is the capsule's, so it survives the strip
+                // being turned on or off.
+                let origin = self.panel.frame.origin
+                Settings.hudOrigin = NSPoint(x: origin.x, y: origin.y + self.stripAllowance)
             }
         }
     }
@@ -61,8 +71,9 @@ final class WaveformOverlay {
         hudView.stopAnimating() // the outgoing view's timer must not outlive it
         theme = newTheme
         let size = newTheme.size
+        stripAllowance = Settings.liveTranscript ? Self.stripGap + Self.stripHeight : 0
         programmaticMove = true
-        panel.setContentSize(size)
+        panel.setContentSize(NSSize(width: size.width, height: size.height + stripAllowance))
         programmaticMove = false
         let bounds = NSRect(origin: .zero, size: size)
 
@@ -97,7 +108,22 @@ final class WaveformOverlay {
             container = makeBlurContainer(bounds: bounds, size: size)
         }
 
-        panel.contentView = container
+        guard stripAllowance > 0 else {
+            transcriptStrip = nil
+            panel.contentView = container
+            return
+        }
+        // Wrap the unchanged capsule so blur, glass and bare themes keep their
+        // own geometry, and hang the strip below it.
+        let outer = NSView(frame: NSRect(x: 0, y: 0, width: size.width,
+                                         height: size.height + stripAllowance))
+        container.setFrameOrigin(NSPoint(x: 0, y: stripAllowance))
+        outer.addSubview(container)
+        let strip = TranscriptStripView(frame: NSRect(x: 0, y: 0, width: size.width,
+                                                      height: Self.stripHeight))
+        outer.addSubview(strip)
+        transcriptStrip = strip
+        panel.contentView = outer
     }
 
     private func makeBlurContainer(bounds: NSRect, size: NSSize) -> NSView {
@@ -183,8 +209,16 @@ final class WaveformOverlay {
         hudView.setPhase(.processing)
     }
 
+    /// Raw text of the chunks finished so far. Ignored once the HUD is
+    /// hiding, so a late chunk can't write into the next press's strip.
+    func showTranscript(_ text: String) {
+        guard acceptsTranscript else { return }
+        transcriptStrip?.text = text.replacingOccurrences(of: "\n", with: " ")
+    }
+
     func hide() {
         cancelPreview()
+        acceptsTranscript = false
         hideGeneration += 1
         let generation = hideGeneration
         hudView.stopAnimating()
@@ -201,21 +235,24 @@ final class WaveformOverlay {
     }
 
     private func present(phase: HudView.Phase) {
-        if HudTheme.current != theme {
+        if HudTheme.current != theme || Settings.liveTranscript != (stripAllowance > 0) {
             applyTheme(HudTheme.current)
         }
         hideGeneration += 1
+        transcriptStrip?.text = ""
+        acceptsTranscript = true
         let origin: NSPoint
         if let saved = Settings.hudOrigin,
-           Self.isVisible(origin: saved, size: panel.frame.size,
+           Self.isVisible(origin: NSPoint(x: saved.x, y: saved.y - stripAllowance),
+                          size: panel.frame.size,
                           on: NSScreen.screens.map(\.visibleFrame)) {
-            origin = saved
+            origin = NSPoint(x: saved.x, y: saved.y - stripAllowance)
         } else {
             // Default bottom-center — also the fallback when the saved spot
             // is on a screen that is no longer connected.
             guard let screen = NSScreen.main else { return }
             origin = NSPoint(x: screen.visibleFrame.midX - panel.frame.width / 2,
-                             y: screen.visibleFrame.minY + 64)
+                             y: screen.visibleFrame.minY + 64 - stripAllowance)
         }
         programmaticMove = true
         panel.setFrameOrigin(origin)
@@ -251,6 +288,7 @@ final class WaveformOverlay {
     func preview() {
         cancelPreview()
         present(phase: .live)
+        acceptsTranscript = false // theme previews never show text
         let start = Date()
         let timer = Timer(timeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -478,5 +516,55 @@ private final class HudView: NSView {
                                        width: radius * 2, height: radius * 2))
         }
         ctx.restoreGState()
+    }
+}
+
+/// One line of raw transcript under the capsule, head-truncated so the newest
+/// words stay visible. Same dark fill as the waiting backdrop so white text
+/// reads on light themes and over bare themes on any desktop.
+private final class TranscriptStripView: NSView {
+    private static let font = NSFont.systemFont(ofSize: 12)
+    private static let padding: CGFloat = 10
+
+    var text = "" {
+        didSet {
+            guard text != oldValue else { return }
+            needsDisplay = true
+            if text.isEmpty {
+                alphaValue = 0
+            } else if oldValue.isEmpty {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.2
+                    animator().alphaValue = 1
+                }
+            }
+        }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        alphaValue = 0
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !text.isEmpty else { return }
+        let radius = bounds.height / 2
+        NSColor.black.withAlphaComponent(0.55).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: radius, yRadius: radius).fill()
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingHead
+        let font = Self.font
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let rect = NSRect(x: Self.padding, y: (bounds.height - lineHeight) / 2,
+                          width: bounds.width - Self.padding * 2, height: lineHeight)
+        (text as NSString).draw(in: rect, withAttributes: [
+            .font: font,
+            .foregroundColor: NSColor.white,
+            .paragraphStyle: paragraph,
+        ])
     }
 }
