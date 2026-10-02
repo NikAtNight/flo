@@ -16,6 +16,7 @@ final class DictationDiagnosticStore: @unchecked Sendable {
         let version: String
         let revision: String
         let builtAt: String
+        /// Historical name: holds any speech model id, Whisper or not.
         let whisperModel: String
         let microphone: String
         let vocabulary: String

@@ -1,5 +1,4 @@
 import Foundation
-import WhisperKit
 
 /// Replays one saved recording through the dictation pipeline without opening
 /// capture hardware or changing any persisted settings.
@@ -100,7 +99,7 @@ enum DictationReplay {
         defer { ReplayTimingSink.flush() }
         let options = try parse(arguments: arguments)
         writeStderr(DiagLog.environmentLine() + "\n")
-        let samples = try AudioProcessor.loadAudioAsFloatArray(fromPath: options.path)
+        let samples = try WhisperEngine.loadSamples(path: options.path)
         let duration = Double(samples.count) / AudioRecorder.sampleRate
         guard duration <= 300 else { throw ReplayError.audioTooLong(duration) }
 
@@ -253,7 +252,7 @@ enum DictationReplay {
         ReplayTimingSink.message(text)
     }
 
-    private static let usage = "Usage: LocalFlow --replay FILE --runs N [--cleanup | --no-cleanup] [--whisper-model NAME] [--ollama-model NAME] [--no-timing]"
+    private static let usage = "Usage: LocalFlow --replay FILE --runs N [--cleanup | --no-cleanup] [--whisper-model NAME] [--ollama-model NAME] [--no-timing]\n--whisper-model takes any speech model id from the Settings list, for example \(TranscriptionModel.parakeetV3ID)."
 }
 
 @MainActor

@@ -120,7 +120,8 @@ APP=build/LocalFlow.app/Contents/MacOS/LocalFlow
 ```
 
 `--runs` is required and accepts 1 through 100. `--whisper-model NAME` and
-`--ollama-model NAME` override only this invocation. Defaults come from settings;
+`--ollama-model NAME` override only this invocation. `--whisper-model` takes
+any speech model id from the Settings list, including `parakeet-tdt-0.6b-v3`. Defaults come from settings;
 `--cleanup` and `--no-cleanup` explicitly override the cleanup toggle. Run known
 local models only for private test audio. Normal Whisper model loading may
 download missing model weights. It never uploads the recording.

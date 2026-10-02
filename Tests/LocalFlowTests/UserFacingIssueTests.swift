@@ -26,8 +26,8 @@ final class UserFacingIssueTests: XCTestCase {
         let summaries = [
             "Microphone stopped",
             "Dictation shortcut unavailable",
-            "Couldn't switch Whisper model",
-            "Couldn't load Whisper model",
+            "Couldn't switch speech model",
+            "Couldn't load speech model",
             "Microphone access needed",
             "Couldn't start the microphone",
             "Couldn't apply the voice edit",

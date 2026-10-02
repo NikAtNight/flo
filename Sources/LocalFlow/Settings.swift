@@ -47,19 +47,12 @@ enum Settings {
         static let settingsWindowOrigin = "settingsWindowOrigin"
     }
 
-    /// Whisper models available in the argmaxinc/whisperkit-coreml registry,
-    /// ordered from development-speed models to the best dictation models.
-    /// Large v3 Turbo is the default: on Apple silicon it decodes fast
-    /// enough for dictation and is the single biggest accuracy lever.
-    static let whisperModels: [(name: String, label: String)] = [
-        ("openai_whisper-tiny.en", "Tiny English (development only)"),
-        ("openai_whisper-base.en", "Base English (fast, lower accuracy)"),
-        ("openai_whisper-small.en", "Small English (fastest useful)"),
-        ("openai_whisper-large-v3-v20240930_626MB", "Large v3 626 MB (compact, high accuracy)"),
-        ("openai_whisper-large-v3-v20240930_turbo", "Large v3 Turbo (best accuracy, default)"),
-    ]
+    /// Every selectable speech model, Whisper or not. The name is historical.
+    static var whisperModels: [(name: String, label: String)] {
+        TranscriptionModel.all.map { (name: $0.id, label: $0.label) }
+    }
 
-    static let defaultWhisperModel = "openai_whisper-large-v3-v20240930_turbo"
+    static let defaultWhisperModel = TranscriptionModel.defaultID
 
     static var hotkey: HotkeyManager.Key {
         get {
