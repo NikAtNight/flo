@@ -15,6 +15,7 @@ final class CancelKeyMonitor {
     private var tap: CFMachPort?
     private var tapRunLoop: CFRunLoop?
     private var isActive = false
+    private var lastCreateFailureLog: Date?
     // Touched only on the tap run loop. A system re-enable after
     // tapDisabledByTimeout must not wake a tap we turned off on purpose.
     private var wantsEnabled = false
@@ -36,6 +37,12 @@ final class CancelKeyMonitor {
 
     func activate() {
         guard !isActive else { return }
+        // macOS invalidates the tap when Accessibility is revoked. Rebuild it
+        // so Escape works again after a re-grant without a relaunch.
+        if let tap, !CFMachPortIsValid(tap) {
+            DiagLog.log("cancel key tap was invalidated; recreating it")
+            discardTap()
+        }
         if tap == nil, !createTap() { return }
         isActive = true
         setTapEnabled(true)
@@ -45,6 +52,16 @@ final class CancelKeyMonitor {
         guard isActive else { return }
         isActive = false
         setTapEnabled(false)
+    }
+
+    /// Stops the tap thread's run loop so the thread exits, and forgets the
+    /// tap. The next `createTap` starts a fresh thread.
+    private func discardTap() {
+        if let tapRunLoop {
+            CFRunLoopStop(tapRunLoop)
+        }
+        tap = nil
+        tapRunLoop = nil
     }
 
     private func setTapEnabled(_ enabled: Bool) {
@@ -67,7 +84,11 @@ final class CancelKeyMonitor {
                 return true
             }
         }
-        DiagLog.log("cancel key tap could not be created; Escape won't cancel dictations")
+        // activate() retries on every dictation; log at most once a minute.
+        if lastCreateFailureLog.map({ Date().timeIntervalSince($0) >= 60 }) ?? true {
+            lastCreateFailureLog = Date()
+            DiagLog.log("cancel key tap could not be created; Escape won't cancel dictations")
+        }
         return false
     }
 
