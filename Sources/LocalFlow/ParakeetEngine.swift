@@ -14,8 +14,16 @@ final class ParakeetEngine: SpeechEngine {
     /// speech.
     static let minimumSeconds = 1.5
     /// Clips over 15 s are decoded in windows. `nil` lets FluidAudio pick per
-    /// model version (it resolves to `false` for v3). Revisit with replay.
+    /// model version, which is `false` for v3. Replay A/B on a 19 s and a 90 s
+    /// clip (FluidAudio 0.17.5): neither setting dropped or repeated words at
+    /// window seams, and they differed only in punctuation. Keep the
+    /// library default.
     static let melChunkContext: Bool? = nil
+    /// FluidAudio token times are emission times, not acoustic boundaries.
+    /// Replaying pauses of 1 to 2.5 s, the gap between the words on either
+    /// side came out 0.6 to 0.75 s shorter than the real silence. Added back
+    /// before comparing against the paragraph pause.
+    static let tokenGapShortfall = 0.7
 
     static let modelsDirectory: URL = FileManager.default
         .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -109,9 +117,13 @@ final class ParakeetEngine: SpeechEngine {
 
     /// Splits the transcript where a long pause follows the end of a
     /// sentence, so `Transcriber.joinSegments` can apply its paragraph rule.
-    /// Token text marks word starts with the SentencePiece "▁" (or a leading
-    /// space). If the tokens don't rebuild `text` exactly, returns one
-    /// segment: output is never worse than the engine's own text.
+    /// FluidAudio 0.17.5 marks word starts with a leading space (it rewrites
+    /// the SentencePiece "▁"; both are accepted). It emits sentence
+    /// punctuation at the end of a pause, right before the next word, so
+    /// punctuation-only tokens don't count as speech when measuring the gap
+    /// or a segment's end.
+    /// If the tokens don't rebuild `text` exactly, returns one segment:
+    /// output is never worse than the engine's own text.
     static func segments(
         text: String,
         tokens: [Token]?,
@@ -129,13 +141,18 @@ final class ParakeetEngine: SpeechEngine {
         var end = first.end
         for token in tokens {
             let piece = token.text.replacingOccurrences(of: "\u{2581}", with: " ")
+            let core = piece.trimmingCharacters(in: .whitespaces)
+            if !core.isEmpty, core.allSatisfy(\.isPunctuation) {
+                current += piece
+                continue
+            }
             let sentence = current.trimmingCharacters(in: .whitespaces)
-            if !sentence.isEmpty,
-               token.start - end >= Double(pauseSeconds),
-               Transcriber.endsSentence(sentence) {
+            let pause = token.start - end + tokenGapShortfall
+            if !sentence.isEmpty, pause >= Double(pauseSeconds), Transcriber.endsSentence(sentence) {
                 segments.append(EngineSegment(text: sentence, start: Float(start), end: Float(end)))
                 current = ""
-                start = token.start
+                // The estimated speech start, so joinSegments sees the real pause.
+                start = end + pause
             }
             current += piece
             end = token.end
