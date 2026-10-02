@@ -58,7 +58,25 @@ final class ParakeetEngineTests: XCTestCase {
         XCTAssertEqual(segments[0].start, 0, accuracy: 0.001)
         XCTAssertEqual(segments[0].end, 0.4, accuracy: 0.001)
         XCTAssertEqual(segments[1].start, 2.4, accuracy: 0.001)
-        XCTAssertEqual(segments[1].end, 2.1, accuracy: 0.001)
+        XCTAssertEqual(segments[1].end, 2.8, accuracy: 0.001)
+    }
+
+    func testEverySplitSpanStartsBeforeItEnds() {
+        let tokens = [
+            Token(text: " One", start: 0.0, end: 0.4),
+            Token(text: ".", start: 1.5, end: 1.6),
+            Token(text: " Two", start: 1.7, end: 2.1),
+            Token(text: ".", start: 3.2, end: 3.3),
+            Token(text: " Three", start: 3.4, end: 3.6),
+            Token(text: ".", start: 3.6, end: 3.7),
+        ]
+        let segments = ParakeetEngine.segments(text: "One. Two. Three.", tokens: tokens, duration: 4)
+        XCTAssertEqual(segments.map(\.text), ["One.", "Two.", "Three."])
+        XCTAssertTrue(segments.allSatisfy { $0.start <= $0.end })
+        XCTAssertEqual(
+            Transcriber.joinSegments(segments.map { (text: $0.text, start: $0.start, end: $0.end) }),
+            "One.\n\nTwo.\n\nThree."
+        )
     }
 
     func testLongGapWithoutSentenceEndDoesNotSplit() {

@@ -122,6 +122,9 @@ final class ParakeetEngine: SpeechEngine {
     /// punctuation at the end of a pause, right before the next word, so
     /// punctuation-only tokens don't count as speech when measuring the gap
     /// or a segment's end.
+    /// Each split shifts the later segments by `tokenGapShortfall`, so
+    /// joinSegments sees the estimated pause and every span keeps
+    /// start <= end.
     /// If the tokens don't rebuild `text` exactly, returns one segment:
     /// output is never worse than the engine's own text.
     static func segments(
@@ -139,6 +142,7 @@ final class ParakeetEngine: SpeechEngine {
         var current = ""
         var start = first.start
         var end = first.end
+        var offset = 0.0
         for token in tokens {
             let piece = token.text.replacingOccurrences(of: "\u{2581}", with: " ")
             let core = piece.trimmingCharacters(in: .whitespaces)
@@ -149,17 +153,17 @@ final class ParakeetEngine: SpeechEngine {
             let sentence = current.trimmingCharacters(in: .whitespaces)
             let pause = token.start - end + tokenGapShortfall
             if !sentence.isEmpty, pause >= Double(pauseSeconds), Transcriber.endsSentence(sentence) {
-                segments.append(EngineSegment(text: sentence, start: Float(start), end: Float(end)))
+                segments.append(EngineSegment(text: sentence, start: Float(start + offset), end: Float(end + offset)))
                 current = ""
-                // The estimated speech start, so joinSegments sees the real pause.
-                start = end + pause
+                offset += tokenGapShortfall
+                start = token.start
             }
             current += piece
             end = token.end
         }
         let last = current.trimmingCharacters(in: .whitespaces)
         if !last.isEmpty {
-            segments.append(EngineSegment(text: last, start: Float(start), end: Float(end)))
+            segments.append(EngineSegment(text: last, start: Float(start + offset), end: Float(end + offset)))
         }
 
         let rebuilt = segments.map(\.text).joined(separator: " ")
