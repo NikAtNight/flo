@@ -914,7 +914,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func commandKeyPressed() {
         guard modelLoaded, !isRecording else { return }
-        TextInjector.prepareSelectionAccess()
+        // A paste still waiting on our promised string blocks the target
+        // app, and an AX call into it would block us until the AX timeout.
+        if !TextInjector.isAwaitingPasteboardRead {
+            TextInjector.prepareSelectionAccess()
+        }
         let model = Settings.ollamaCommandModel
         Task { await textModelPolicy.prewarm(model: model) }
         recordingIsCommand = true

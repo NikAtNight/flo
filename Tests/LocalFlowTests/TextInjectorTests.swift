@@ -260,6 +260,18 @@ final class TextInjectorTests: XCTestCase {
     }
 
     @MainActor
+    func testAwaitingPasteboardReadLastsFromDispatchUntilTheRead() {
+        let harness = PasteHarness(test: self)
+        XCTAssertFalse(TextInjector.isAwaitingPasteboardRead)
+        harness.inject("dictated")
+        XCTAssertTrue(TextInjector.isAwaitingPasteboardRead)
+
+        XCTAssertEqual(harness.board.string(forType: .string), "dictated")
+
+        XCTAssertFalse(TextInjector.isAwaitingPasteboardRead)
+    }
+
+    @MainActor
     func testRestoreNowResolvesPendingRestoreOnce() {
         let harness = PasteHarness(test: self)
         harness.inject("dictated")

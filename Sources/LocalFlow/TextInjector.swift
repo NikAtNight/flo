@@ -162,6 +162,14 @@ enum TextInjector {
         scheduleRestore(timing.ceiling)
     }
 
+    /// True from Cmd+V dispatch until the target app reads the paste or the
+    /// clipboard is restored. While it's true the frontmost app may be
+    /// blocked waiting for our main thread to fulfil the promised string, so
+    /// a synchronous Accessibility call into it would stall both apps.
+    static var isAwaitingPasteboardRead: Bool {
+        dispatchedAt != nil && readObservedAt == nil
+    }
+
     /// Delay from the moment the receipt arrives until the restore.
     static func restoreDelay(sinceDispatch elapsed: TimeInterval, timing: RestoreTiming) -> TimeInterval {
         max(timing.grace, timing.floor - elapsed)
