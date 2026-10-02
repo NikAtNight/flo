@@ -48,6 +48,8 @@ dictation history is a separate feature controlled by its existing setting.
 | `pasteDispatched` | Command-V posting succeeded or failed; success is not confirmation from the target app |
 | `typingStarted` / `typingDispatched` | Secure Input fallback's separate serial typing queue |
 | `clipboardWindowResolved` | Restore/supersession bookkeeping, not visible insertion |
+| `pasteboardRead` | First read of the dictation off the pasteboard. `readLatencyMs` is time since dispatch. The read is anonymous, so it may be the target app or a clipboard manager that ignores the transient marker |
+| `clipboardWindowResolved` fields | `readObserved` is 1 when a read came first. `restoreDelayMs` is dispatch to restore or supersession. Restore waits for read + 200 ms but never less than 2.5 s after dispatch, or 10 s with no read |
 
 Sample-based inference events also record the exact submitted sample count,
 voiced seconds, finite voiced dBFS, and the low-energy flag. Finish events report

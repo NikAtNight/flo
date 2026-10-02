@@ -116,6 +116,20 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         XCTAssertEqual(DiagnosticsSnapshot.parse(text).traces.first?.dispatchMs, 500)
     }
 
+    func testPasteboardReadParsesWithoutCountingAsDispatch() throws {
+        let text = try [
+            line(event(firstID, ordinal: 0, name: .pasteDispatched, releaseMs: 500, status: .success)),
+            line(event(firstID, ordinal: 1, name: .pasteboardRead, releaseMs: 900, fields: ["readLatencyMs": 400])),
+            line(event(secondID, ordinal: 0, name: .pasteboardRead, releaseMs: 300, fields: ["readLatencyMs": 50]))
+        ].joined(separator: "\n")
+        let snapshot = DiagnosticsSnapshot.parse(text)
+
+        XCTAssertEqual(snapshot.ignoredTimingLines, 0)
+        XCTAssertEqual(snapshot.traces.first { $0.id == firstID }?.dispatchMs, 500)
+        XCTAssertNil(snapshot.traces.first { $0.id == secondID }?.dispatchMs)
+        XCTAssertEqual(snapshot.traces.first { $0.id == firstID }?.events.last?.fields["readLatencyMs"], 400)
+    }
+
     func testSuccessfulTypingDispatchCountsAfterPasteFailure() throws {
         let text = try [
             line(event(firstID, ordinal: 0, name: .pasteDispatched, releaseMs: 100, status: .failed)),

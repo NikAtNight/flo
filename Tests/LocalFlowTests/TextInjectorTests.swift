@@ -132,6 +132,146 @@ final class TextInjectorTests: XCTestCase {
         }
     }
 
+    // MARK: - Receipt-based clipboard restore
+
+    @MainActor
+    func testRestoreDelayHonorsFloorAndGrace() {
+        let timing = TextInjector.RestoreTiming.standard
+        XCTAssertEqual(TextInjector.restoreDelay(sinceDispatch: 0.1, timing: timing), 2.4, accuracy: 1e-9)
+        XCTAssertEqual(TextInjector.restoreDelay(sinceDispatch: 2.4, timing: timing), 0.2, accuracy: 1e-9)
+        XCTAssertEqual(TextInjector.restoreDelay(sinceDispatch: 5, timing: timing), 0.2, accuracy: 1e-9)
+    }
+
+    @MainActor
+    func testFirstReadSuppliesTextAndMovesRestoreToGraceAfterFloor() throws {
+        let harness = PasteHarness(test: self)
+        harness.inject("dictated")
+
+        XCTAssertEqual(harness.scheduled.map(\.delay), [10])
+        let changeCount = harness.board.changeCount
+        harness.time += 0.5
+        // An in-process read reaches the provider synchronously.
+        XCTAssertEqual(harness.board.string(forType: .string), "dictated")
+        XCTAssertEqual(harness.board.changeCount, changeCount, "supplying promised data must not look like a copy")
+        XCTAssertEqual(harness.scheduled.map(\.delay), [10, 2.0])
+        XCTAssertTrue(harness.scheduled[0].work.isCancelled)
+        XCTAssertTrue(harness.results.isEmpty)
+
+        harness.time += 2.0
+        harness.scheduled[1].work.perform()
+
+        XCTAssertEqual(harness.board.string(forType: .string), "user clipboard")
+        XCTAssertEqual(harness.results, [.dispatched])
+        XCTAssertEqual(harness.names, [.pasteDispatched, .pasteboardRead, .clipboardWindowResolved])
+        let read = try XCTUnwrap(harness.events.events.first { $0.name == .pasteboardRead })
+        XCTAssertEqual(try XCTUnwrap(read.fields["readLatencyMs"]), 500, accuracy: 1e-6)
+        let resolved = try XCTUnwrap(harness.events.events.last)
+        XCTAssertEqual(resolved.status, .unchangedClipboard)
+        XCTAssertEqual(resolved.fields["readObserved"], 1)
+        XCTAssertEqual(try XCTUnwrap(resolved.fields["restoreDelayMs"]), 2500, accuracy: 1e-6)
+    }
+
+    @MainActor
+    func testUnreadTextRestoresAtCeiling() throws {
+        let harness = PasteHarness(test: self)
+        harness.inject("dictated")
+
+        harness.time += 10
+        try XCTUnwrap(harness.scheduled.first).work.perform()
+
+        XCTAssertEqual(harness.board.string(forType: .string), "user clipboard")
+        XCTAssertEqual(harness.results, [.dispatched])
+        XCTAssertEqual(harness.scheduled.count, 1)
+        let resolved = try XCTUnwrap(harness.events.events.last)
+        XCTAssertEqual(resolved.name, .clipboardWindowResolved)
+        XCTAssertEqual(resolved.fields["readObserved"], 0)
+        XCTAssertEqual(try XCTUnwrap(resolved.fields["restoreDelayMs"]), 10_000, accuracy: 1e-6)
+    }
+
+    @MainActor
+    func testUserCopyBeforeRestoreKeepsTheirClipboard() throws {
+        let harness = PasteHarness(test: self)
+        harness.inject("dictated")
+
+        harness.board.clearContents()
+        harness.board.setString("copied meanwhile", forType: .string)
+        try XCTUnwrap(harness.scheduled.first).work.perform()
+
+        XCTAssertEqual(harness.board.string(forType: .string), "copied meanwhile")
+        XCTAssertEqual(harness.results, [.clipboardChanged])
+        XCTAssertEqual(harness.events.events.last?.status, .changedClipboard)
+    }
+
+    @MainActor
+    func testSupersedingInjectionKeepsFirstSnapshotAndResolvesEarlierOne() throws {
+        let harness = PasteHarness(test: self)
+        harness.inject("first")
+        XCTAssertEqual(harness.board.string(forType: .string), "first")
+        let firstRestore = try XCTUnwrap(harness.scheduled.last)
+
+        harness.inject("second")
+
+        XCTAssertEqual(harness.results, [.dispatched])
+        XCTAssertTrue(firstRestore.work.isCancelled)
+        XCTAssertEqual(harness.board.string(forType: .string), "second")
+        try XCTUnwrap(harness.scheduled.last).work.perform()
+
+        XCTAssertEqual(harness.board.string(forType: .string), "user clipboard")
+        XCTAssertEqual(harness.results, [.dispatched, .dispatched])
+        let resolved = harness.events.events.filter { $0.name == .clipboardWindowResolved }
+        XCTAssertEqual(resolved.map { $0.fields["readObserved"] }, [1, 1])
+    }
+
+    @MainActor
+    func testReadAfterRestoreIsIgnored() throws {
+        let harness = PasteHarness(test: self)
+        harness.inject("dictated")
+        try XCTUnwrap(harness.scheduled.first).work.perform()
+        let eventCount = harness.events.events.count
+
+        XCTAssertEqual(harness.board.string(forType: .string), "user clipboard")
+        TextInjector.restoreNow()
+
+        XCTAssertEqual(harness.scheduled.count, 1)
+        XCTAssertEqual(harness.events.events.count, eventCount)
+        XCTAssertEqual(harness.results, [.dispatched])
+    }
+
+    @MainActor
+    func testFailedPasteRestoresImmediatelyWithoutScheduling() {
+        let harness = PasteHarness(test: self)
+        harness.inject("dictated", postPaste: false)
+
+        XCTAssertEqual(harness.board.string(forType: .string), "user clipboard")
+        XCTAssertEqual(harness.results, [.dispatchFailed])
+        XCTAssertTrue(harness.scheduled.isEmpty)
+        XCTAssertEqual(harness.names, [.pasteDispatched])
+        XCTAssertEqual(harness.events.events.first?.status, .failed)
+    }
+
+    @MainActor
+    func testDictationIsMarkedTransientForClipboardManagers() throws {
+        let harness = PasteHarness(test: self)
+        harness.inject("dictated")
+
+        let types = try XCTUnwrap(harness.board.pasteboardItems?.first).types
+        XCTAssertTrue(types.contains(TextInjector.transientType))
+        XCTAssertTrue(types.contains(.string))
+    }
+
+    @MainActor
+    func testRestoreNowResolvesPendingRestoreOnce() {
+        let harness = PasteHarness(test: self)
+        harness.inject("dictated")
+
+        TextInjector.restoreNow()
+        TextInjector.restoreNow()
+
+        XCTAssertEqual(harness.board.string(forType: .string), "user clipboard")
+        XCTAssertEqual(harness.results, [.dispatched])
+        XCTAssertTrue(harness.scheduled[0].work.isCancelled)
+    }
+
     func testUTF16ChunksRoundTripWithoutSplittingSurrogatePairs() async {
         // Nine ASCII units followed by an emoji puts the high surrogate exactly
         // at a naive ten-unit boundary.
@@ -153,5 +293,39 @@ final class TextInjectorTests: XCTestCase {
         XCTAssertTrue(empty.isEmpty)
         XCTAssertEqual(ascii.map(\.count), [3, 3, 2])
         XCTAssertEqual(ascii.flatMap { $0 }, Array("abcdefgh".utf16))
+    }
+}
+
+/// Drives the paste path against a private pasteboard with a fake clock and
+/// scheduler. `postPaste` is stubbed so no real Cmd+V goes out.
+@MainActor
+private final class PasteHarness {
+    let board = NSPasteboard(name: NSPasteboard.Name("LocalFlowTests.\(UUID().uuidString)"))
+    let events = TraceEvents()
+    var time: TimeInterval = 100
+    var scheduled: [(delay: TimeInterval, work: DispatchWorkItem)] = []
+    var results: [TextInjector.InjectionResult] = []
+    private lazy var trace = DictationTrace(sink: { [events] in events.append($0) })
+
+    var names: [DictationTrace.Name] { events.events.map(\.name) }
+
+    init(test: XCTestCase) {
+        board.clearContents()
+        board.setString("user clipboard", forType: .string)
+        let board = board
+        test.addTeardownBlock { @MainActor in
+            TextInjector.restoreNow()
+            board.releaseGlobally()
+        }
+    }
+
+    func inject(_ text: String, postPaste: Bool = true) {
+        DictationTrace.$current.withValue(trace) {
+            TextInjector.inject(
+                text, pasteboard: board, isSecureInputEnabled: { false }, postPaste: { postPaste },
+                now: { self.time },
+                schedule: { delay, work in self.scheduled.append((delay, work)) }
+            ) { self.results.append($0) }
+        }
     }
 }

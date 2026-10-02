@@ -41,26 +41,54 @@ enum TextInjector {
     // overlapping dictations.
     private static var savedItems: [NSPasteboardItem]?
     private static var restoreWork: DispatchWorkItem?
-    private static var pendingCompletion: ((Bool) -> Void)?
+    private static var pendingCompletion: ((_ undisturbed: Bool, _ readObserved: Bool) -> Void)?
     private static var ourChangeCount = -1
     private static var restoreGeneration = 0
+    private static var dispatchedAt: TimeInterval?
+    private static var readObservedAt: TimeInterval?
+    // AppKit's docs don't promise the item keeps its provider alive.
+    private static var pasteReceipt: PasteReceipt?
+
+    /// When to put the user's clipboard back. Restore at the later of
+    /// read + `grace` and dispatch + `floor`. With no read, restore at
+    /// dispatch + `ceiling`.
+    struct RestoreTiming: Equatable {
+        var floor: TimeInterval = 2.5
+        var grace: TimeInterval = 0.2
+        var ceiling: TimeInterval = 10
+        static let standard = RestoreTiming()
+    }
+
+    typealias Scheduler = (TimeInterval, DispatchWorkItem) -> Void
+
+    /// nspasteboard.org marker. Compliant clipboard managers skip items that
+    /// carry it without reading them, so they don't fake an early receipt.
+    static let transientType = NSPasteboard.PasteboardType("org.nspasteboard.TransientType")
 
     /// `completion` runs on the main queue and reports event dispatch and
     /// clipboard disturbance. Neither confirms insertion into the target app.
-    static func inject(_ text: String, onDispatch: (() -> Void)? = nil, completion: ((InjectionResult) -> Void)? = nil) {
+    static func inject(
+        _ text: String,
+        pasteboard: NSPasteboard = .general,
+        timing: RestoreTiming = .standard,
+        isSecureInputEnabled: () -> Bool = { IsSecureEventInputEnabled() },
+        postPaste: @MainActor () -> Bool = { postKeystroke(virtualKey: CGKeyCode(kVK_ANSI_V), flags: .maskCommand) },
+        now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        schedule: @escaping Scheduler = { delay, work in DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work) },
+        onDispatch: (() -> Void)? = nil,
+        completion: ((InjectionResult) -> Void)? = nil
+    ) {
         let trace = DictationTrace.current
         guard !text.isEmpty else {
             completion?(.dispatchFailed)
             return
         }
 
-        if IsSecureEventInputEnabled() {
+        if isSecureInputEnabled() {
             // Password field or similar: avoid the clipboard entirely.
             typeString(text, trace: trace, onDispatch: onDispatch, completion: completion)
             return
         }
-
-        let pasteboard = NSPasteboard.general
 
         // Two dictations can land within one restore window (recording while
         // the previous one transcribes is allowed). Keep the snapshot from
@@ -71,20 +99,43 @@ enum TextInjector {
         restoreGeneration &+= 1
         // A superseded injection never reaches its restore work — resolve it
         // now with the same signal the work item would have used.
-        if let pending = pendingCompletion {
-            pendingCompletion = nil
-            pending(pasteboard.changeCount == ourChangeCount)
-        }
+        resolvePending(undisturbed: pasteboard.changeCount == ourChangeCount)
         if savedItems == nil || pasteboard.changeCount != ourChangeCount {
             savedItems = snapshot(of: pasteboard)
         }
 
+        let generation = restoreGeneration
+        let scheduleRestore: (TimeInterval) -> Void = { delay in
+            let work = DispatchWorkItem { restore(generation, on: pasteboard) }
+            restoreWork = work
+            schedule(delay, work)
+        }
+        // Promise the text instead of writing it, so the first reader tells
+        // us the paste is being serviced.
+        let receipt = PasteReceipt(text: text) {
+            let read = { noteRead(generation, at: now(), timing: timing, trace: trace, scheduleRestore: scheduleRestore) }
+            // In-process reads call the provider synchronously and
+            // out-of-process reads are serviced on the main run loop, so
+            // this is main in practice. Hop if it ever isn't.
+            if Thread.isMainThread {
+                MainActor.assumeIsolated(read)
+            } else {
+                DispatchQueue.main.async(execute: read)
+            }
+        }
+        pasteReceipt = receipt
+        let item = NSPasteboardItem()
+        if !item.setDataProvider(receipt, forTypes: [.string]) {
+            item.setString(text, forType: .string)
+        }
+        item.setData(Data(), forType: transientType)
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        pasteboard.writeObjects([item])
         ourChangeCount = pasteboard.changeCount
-        guard postKeystroke(virtualKey: CGKeyCode(kVK_ANSI_V), flags: .maskCommand) else {
+        guard postPaste() else {
             trace?.record(.pasteDispatched, status: .failed)
             // No Cmd-V went out — put the user's clipboard back right away.
+            pasteReceipt = nil
             if let saved = savedItems {
                 savedItems = nil
                 pasteboard.clearContents()
@@ -94,35 +145,75 @@ enum TextInjector {
             return
         }
         trace?.record(.pasteDispatched, status: .success)
+        let dispatched = now()
+        dispatchedAt = dispatched
         onDispatch?()
-        pendingCompletion = { undisturbed in
-            trace?.record(.clipboardWindowResolved, status: undisturbed ? .unchangedClipboard : .changedClipboard)
+        pendingCompletion = { undisturbed, readObserved in
+            trace?.record(.clipboardWindowResolved, status: undisturbed ? .unchangedClipboard : .changedClipboard, fields: [
+                .readObserved: readObserved ? 1 : 0,
+                .restoreDelayMs: (now() - dispatched) * 1000
+            ])
             completion?(undisturbed ? .dispatched : .clipboardChanged)
         }
 
-        // Give the frontmost app time to service the paste before restoring —
-        // slow apps can take well over a second, and restoring too early
-        // pastes the user's old clipboard instead of the dictation.
-        let generation = restoreGeneration
-        let work = DispatchWorkItem {
-            guard generation == restoreGeneration else { return }
-            restoreWork = nil
-            let saved = savedItems
-            savedItems = nil
-            let done = pendingCompletion
-            pendingCompletion = nil
-            // changeCount moved = the user copied something themselves in
-            // the meantime — theirs wins over the restore, and whether the
-            // paste landed first is unknowable.
-            let undisturbed = pasteboard.changeCount == ourChangeCount
-            if undisturbed, let saved {
-                pasteboard.clearContents()
-                pasteboard.writeObjects(saved)
-            }
-            done?(undisturbed)
+        // Slow apps can take well over a second to service the paste, and
+        // restoring too early pastes the user's old clipboard instead of the
+        // dictation. Wait for a read, or the ceiling if nothing reads.
+        scheduleRestore(timing.ceiling)
+    }
+
+    /// Delay from the moment the receipt arrives until the restore.
+    static func restoreDelay(sinceDispatch elapsed: TimeInterval, timing: RestoreTiming) -> TimeInterval {
+        max(timing.grace, timing.floor - elapsed)
+    }
+
+    /// Restores a pending snapshot now. No-op when nothing is pending.
+    /// For the quit path and tests.
+    static func restoreNow() {
+        guard let work = restoreWork else { return }
+        work.perform()
+        work.cancel()
+    }
+
+    private static func noteRead(
+        _ generation: Int, at time: TimeInterval, timing: RestoreTiming,
+        trace: DictationTrace?, scheduleRestore: (TimeInterval) -> Void
+    ) {
+        // The provider runs once per item, so only the first read counts.
+        guard generation == restoreGeneration, let dispatchedAt, readObservedAt == nil else { return }
+        readObservedAt = time
+        let elapsed = time - dispatchedAt
+        trace?.record(.pasteboardRead, fields: [.readLatencyMs: elapsed * 1000])
+        restoreWork?.cancel()
+        scheduleRestore(restoreDelay(sinceDispatch: elapsed, timing: timing))
+    }
+
+    private static func restore(_ generation: Int, on pasteboard: NSPasteboard) {
+        guard generation == restoreGeneration else { return }
+        restoreWork = nil
+        pasteReceipt = nil
+        let saved = savedItems
+        savedItems = nil
+        // changeCount moved = the user copied something themselves in
+        // the meantime. Theirs wins over the restore, and whether the
+        // paste landed first is unknowable.
+        let undisturbed = pasteboard.changeCount == ourChangeCount
+        if undisturbed, let saved {
+            pasteboard.clearContents()
+            pasteboard.writeObjects(saved)
         }
-        restoreWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
+        resolvePending(undisturbed: undisturbed)
+    }
+
+    /// Clears per-injection state before calling out, so a completion that
+    /// starts the next injection sees a clean slate.
+    private static func resolvePending(undisturbed: Bool) {
+        guard let done = pendingCompletion else { return }
+        let readObserved = readObservedAt != nil
+        pendingCompletion = nil
+        dispatchedAt = nil
+        readObservedAt = nil
+        done(undisturbed, readObserved)
     }
 
     enum SelectionError: Error, LocalizedError, Equatable {
@@ -273,5 +364,32 @@ enum TextInjector {
             start = end
         }
         return chunks
+    }
+}
+
+/// Supplies the dictation text on first read and reports that read. AppKit
+/// calls the provider at most once per type, then serves cached bytes, so
+/// the receipt is one-shot and can't tell the target app from anyone else.
+private final class PasteReceipt: NSObject, NSPasteboardItemDataProvider {
+    private var text: String?
+    private let onRead: () -> Void
+
+    init(text: String, onRead: @escaping () -> Void) {
+        self.text = text
+        self.onRead = onRead
+    }
+
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        guard let text else { return }
+        // Set it on the item, not the pasteboard. Writing to the pasteboard
+        // would bump changeCount and look like the user copied something.
+        item.setString(text, forType: type)
+        onRead()
+    }
+
+    /// Fires when the item leaves the pasteboard, including during our own
+    /// clearContents(). Only drops the text, never drives state.
+    func pasteboardFinishedWithDataProvider(_ pasteboard: NSPasteboard) {
+        text = nil
     }
 }

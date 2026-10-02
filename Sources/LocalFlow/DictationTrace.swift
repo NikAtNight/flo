@@ -25,6 +25,7 @@ final class DictationTrace: @unchecked Sendable {
         case resultReady, resultDelivered, cancellationRequested
         case injectionQueued, injectionStarted, injectionSkipped
         case pasteDispatched, typingStarted, typingDispatched, clipboardWindowResolved
+        case pasteboardRead
     }
 
     enum Status: String, Codable {
@@ -43,6 +44,7 @@ final class DictationTrace: @unchecked Sendable {
         case thermalState, systemLoad1m
         case voicedSeconds, voicedDBFS, lowEnergy, rawCharacters, resultCount, segmentCount, hallucinationFiltered
         case temperatureFallbackLimit, decodingFallbacks
+        case readObserved, restoreDelayMs, readLatencyMs
     }
 
     /// Host context for slow inference. Load is the system's one-minute load
