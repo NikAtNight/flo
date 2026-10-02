@@ -44,7 +44,7 @@ enum StartupModelSequence {
         case timedOut
 
         var errorDescription: String? {
-            "Whisper model load timed out."
+            "Speech model load timed out."
         }
     }
 
@@ -460,7 +460,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// would be worse than losing a dictation the user watched get cut off.
     private func abortRecording(reason: String) {
         discardActiveRecording(reason: reason)
-        // Sleep must not carry an open mic through the nap — release any
+        // Sleep must not carry an open mic through the nap. Release any
         // warm session too (queued after stop, so it sees the idle state).
         recorder.releaseWarmSession()
     }
@@ -1198,7 +1198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         playCue("Basso")
         state = .failed(UserFacingIssue(
             summary: "Voice command timed out",
-            details: "The voice edit was cancelled. Try again. If speech recognition stopped responding, switch Whisper models or restart LocalFlow."
+            details: "The voice edit was cancelled. Try again. If speech recognition stopped responding, switch speech models or restart LocalFlow."
         ))
         scheduleFailureRecovery()
     }

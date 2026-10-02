@@ -31,7 +31,7 @@ actor WhisperEngine: SpeechEngine {
                 try fm.moveItem(at: old, to: new)
                 DiagLog.log("moved model cache out of ~/Documents to %@", new.path)
             } catch {
-                DiagLog.log("model cache migration failed (%@) — will download fresh", error.localizedDescription)
+                DiagLog.log("model cache migration failed (%@), will download fresh", error.localizedDescription)
             }
         }
         return base
@@ -50,7 +50,7 @@ actor WhisperEngine: SpeechEngine {
                 // CoreML or tokenizer loading finds corruption, let the Hub
                 // path verify/repair the cache instead of stranding startup.
                 DiagLog.log(
-                    "cached model %@ failed to load (%@) — resolving through model registry",
+                    "cached model %@ failed to load (%@), resolving through model registry",
                     model,
                     error.localizedDescription
                 )
