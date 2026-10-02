@@ -77,17 +77,39 @@ final class DictationDeliveryTests: XCTestCase {
             await withCheckedContinuation { resume = $0 }
         }
         let earlier = delivery.begin(configuration())
-        delivery.release(generation: earlier, samples: speech())
+        delivery.release(generation: earlier, samples: speech(), hudGeneration: 5)
         await waitUntil { resume != nil }
         let silent = delivery.begin(configuration())
         delivery.release(generation: silent, samples: speech(0))
         XCTAssertEqual(effects.outcomes, [.insufficientVoice(generation: silent)])
         XCTAssertEqual(delivery.retryCount, 0)
         XCTAssertTrue(effects.history.isEmpty)
+        // Escape after release: the HUD is told to go away right away.
         delivery.cancel(generation: earlier)
+        XCTAssertEqual(effects.cancelled.map(\.hudGeneration), [5])
         resume?.resume(returning: "stale")
         await settle()
         XCTAssertTrue(effects.injected.isEmpty)
+        XCTAssertTrue(effects.history.isEmpty)
+        XCTAssertEqual(effects.outcomes, [.insufficientVoice(generation: silent)])
+        XCTAssertEqual(delivery.retryCount, 0)
+        XCTAssertFalse(delivery.isBusy)
+    }
+
+    /// Escape can land between release and the audio handoff. The cancel
+    /// has nothing to report yet (the caller hides the HUD itself), and the
+    /// late handoff must not revive the dictation.
+    func testCancelBeforeAudioHandoffIgnoresTheLateRelease() async {
+        let effects = Effects()
+        let delivery = makeDelivery(effects: effects) { _ in "Should not paste." }
+        let generation = delivery.begin(configuration())
+        delivery.cancel(generation: generation)
+        XCTAssertTrue(effects.cancelled.isEmpty)
+        delivery.release(generation: generation, samples: speech(), hudGeneration: 3)
+        await settle()
+        XCTAssertTrue(effects.injected.isEmpty)
+        XCTAssertTrue(effects.history.isEmpty)
+        XCTAssertTrue(effects.outcomes.isEmpty)
         XCTAssertFalse(delivery.isBusy)
     }
 
