@@ -225,7 +225,7 @@ enum DictationReplay {
     ) async throws {
         let started = DispatchTime.now().uptimeNanoseconds
         let totalDuration = Double(samples.count) / AudioRecorder.sampleRate
-        var tick = cadence.startSeconds
+        var tick = cadence.firstSnapshotSeconds
         while tick < totalDuration {
             let target = started + UInt64(tick * 1_000_000_000)
             let now = DispatchTime.now().uptimeNanoseconds
@@ -241,7 +241,7 @@ enum DictationReplay {
             )
             // Live capture schedules the next tick from the actual callback,
             // not the original deadline. Do not catch up with extra passes.
-            tick = elapsed + cadence.tickSeconds
+            tick = elapsed + cadence.snapshotSeconds
         }
 
         let target = started + UInt64(totalDuration * 1_000_000_000)

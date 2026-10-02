@@ -41,6 +41,17 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(IncrementalCadence.forModel(TranscriptionModel.parakeetV3ID), .parakeet)
         XCTAssertEqual(IncrementalCadence.forModel("not-a-model"), .whisper)
         XCTAssertEqual(IncrementalCadence.whisper, IncrementalCadence(startSeconds: 8, tickSeconds: 4))
-        XCTAssertEqual(IncrementalCadence.parakeet, IncrementalCadence(startSeconds: 4, tickSeconds: 2))
+        XCTAssertEqual(IncrementalCadence.parakeet, IncrementalCadence(
+            startSeconds: 4, tickSeconds: 2, previewTickSeconds: 1, previewStartSeconds: 1
+        ))
+    }
+
+    func testOnlyParakeetPreviewsAndSnapshotsFollowTheFasterCadence() {
+        XCTAssertNil(IncrementalCadence.whisper.previewTickSeconds)
+        XCTAssertEqual(IncrementalCadence.whisper.firstSnapshotSeconds, 8)
+        XCTAssertEqual(IncrementalCadence.whisper.snapshotSeconds, 4)
+        XCTAssertEqual(IncrementalCadence.parakeet.previewTickSeconds, 1)
+        XCTAssertEqual(IncrementalCadence.parakeet.firstSnapshotSeconds, 1)
+        XCTAssertEqual(IncrementalCadence.parakeet.snapshotSeconds, 1)
     }
 }

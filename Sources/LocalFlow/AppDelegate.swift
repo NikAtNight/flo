@@ -875,7 +875,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         activeDictationGeneration = generation
         hudDictationGeneration = (dictation: generation, hud: recordingGeneration)
         let cadence = context.incrementalCadence
-        scheduleIncrementalTick(generation: generation, cadence: cadence, after: cadence.startSeconds)
+        scheduleIncrementalTick(generation: generation, cadence: cadence, after: cadence.firstSnapshotSeconds)
     }
 
     private func scheduleIncrementalTick(generation: Int, cadence: IncrementalCadence, after delay: TimeInterval) {
@@ -888,8 +888,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func runIncrementalTick(generation: Int, cadence: IncrementalCadence) {
         guard activeDictationGeneration == generation, isRecording else { return }
-        scheduleIncrementalTick(generation: generation, cadence: cadence, after: cadence.tickSeconds)
-        guard dictationDelivery.canAcceptIncrementalChunk(generation: generation) else {
+        scheduleIncrementalTick(generation: generation, cadence: cadence, after: cadence.snapshotSeconds)
+        guard dictationDelivery.wantsIncrementalSnapshot(generation: generation) else {
             activeDictationTrace?.record(.incrementalSkipped, status: .busy)
             return
         }

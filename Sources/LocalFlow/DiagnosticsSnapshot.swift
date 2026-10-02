@@ -58,6 +58,7 @@ struct DiagnosticsSnapshot: Sendable {
                     case .incrementalChunk(let index): lines.append("  Incremental chunk \(index)")
                     case .releaseTail: lines.append("  Release tail")
                     case .fullUtterance: lines.append("  Full utterance")
+                    case .preview: lines.append("  Preview")
                     }
                 }
                 for key in event.fields.keys.sorted() {

@@ -110,8 +110,8 @@ final class DictationDelivery {
         return generation
     }
 
-    func canAcceptIncrementalChunk(generation: Int) -> Bool {
-        pipeline.canAcceptIncrementalChunk(generation: generation)
+    func wantsIncrementalSnapshot(generation: Int) -> Bool {
+        pipeline.wantsIncrementalSnapshot(generation: generation)
     }
 
     func processIncrementalSnapshot(generation: Int, samples: [Float]) {

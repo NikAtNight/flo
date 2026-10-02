@@ -4,12 +4,29 @@ import Foundation
 /// took 350 to 975 ms per chunk, so it waits 8 s and ticks every 4 s.
 /// Parakeet took 40 to 90 ms on the same clips, so it can start at 4 s and
 /// tick every 2 s.
+///
+/// Previews transcribe the uncommitted audio for the HUD only and are never
+/// committed. Parakeet takes about 50 ms for a short clip, so it previews
+/// every second from 1 s. Whisper is too slow for that and has none.
 struct IncrementalCadence: Equatable {
     let startSeconds: TimeInterval
     let tickSeconds: TimeInterval
+    var previewTickSeconds: TimeInterval? = nil
+    var previewStartSeconds: TimeInterval = 0
 
     static let whisper = IncrementalCadence(startSeconds: 8, tickSeconds: 4)
-    static let parakeet = IncrementalCadence(startSeconds: 4, tickSeconds: 2)
+    static let parakeet = IncrementalCadence(
+        startSeconds: 4, tickSeconds: 2, previewTickSeconds: 1, previewStartSeconds: 1
+    )
+
+    /// When capture takes its first snapshot, and how often after that.
+    var firstSnapshotSeconds: TimeInterval {
+        previewTickSeconds == nil ? startSeconds : min(previewStartSeconds, startSeconds)
+    }
+
+    var snapshotSeconds: TimeInterval {
+        previewTickSeconds.map { min($0, tickSeconds) } ?? tickSeconds
+    }
 
     static func forModel(_ id: String) -> IncrementalCadence {
         switch TranscriptionModel.engine(forID: id) {
@@ -48,6 +65,7 @@ enum DictationTranscriptionSegment: Equatable, Codable, Sendable {
     case incrementalChunk(index: Int)
     case releaseTail
     case fullUtterance
+    case preview
 }
 
 /// Shared admission and decoder preparation for live dictation, commands, and replay.
@@ -124,6 +142,12 @@ final class DictationSessionPipeline {
         var capturedAudioSaved = false
         var pendingChunks: [IncrementalChunk] = []
         var activeTask: Task<Void, Never>?
+        /// Never cancelled: cancelling inference quarantines the engine.
+        /// Dropping the reference is enough, since `isCurrent` rejects
+        /// stale results.
+        var previewTask: Task<Void, Never>?
+        var lastPreviewRange: Range<Int>?
+        var nextChunkSnapshotSamples = 0
         /// Text cleanup never touches the speech engine, so it is always
         /// safe to cancel.
         var activeTaskIsCleanup = false
@@ -195,16 +219,36 @@ final class DictationSessionPipeline {
         sessions[generation]?.incrementalSampleEnd
     }
 
+    /// Lets capture skip copying audio when no chunk or preview could start.
+    func wantsIncrementalSnapshot(generation: Int) -> Bool {
+        guard let session = sessions[generation] else { return false }
+        return canAcceptIncrementalChunk(generation: generation) || canStartPreview(session)
+    }
+
     /// Shared by live capture and file replay so benchmarks use the same
     /// thresholds and chunk acceptance rules as dictation.
     func processIncrementalSnapshot(generation: Int, samples: [Float]) {
         guard let session = sessions[generation] else { return }
+        // Previews bring snapshots faster than the chunk tick, but chunk
+        // attempts keep the chunk tick.
+        if samples.count >= session.nextChunkSnapshotSamples {
+            processChunkSnapshot(session, samples: samples)
+        }
+        startPreviewIfNeeded(session, samples: samples)
+    }
+
+    private func processChunkSnapshot(_ session: Session, samples: [Float]) {
+        let generation = session.generation
+        let cadence = session.context.incrementalCadence
         let trace = session.trace
         trace?.record(.incrementalAttempt, fields: [.samples: Double(samples.count)])
-        guard samples.count >= Int(session.context.incrementalCadence.startSeconds * AudioRecorder.sampleRate) else {
+        guard samples.count >= Int(cadence.startSeconds * AudioRecorder.sampleRate) else {
             trace?.record(.incrementalSkipped, status: .tooShort)
             return
         }
+        // Half a snapshot interval of slack absorbs timer and audio buffer jitter.
+        session.nextChunkSnapshotSamples = samples.count
+            + Int((cadence.tickSeconds - cadence.snapshotSeconds / 2) * AudioRecorder.sampleRate)
         guard canAcceptIncrementalChunk(generation: generation) else {
             trace?.record(.incrementalSkipped, status: .busy)
             return
@@ -224,6 +268,51 @@ final class DictationSessionPipeline {
             pauseSecondsAfterChunk: AudioRecorder.incrementalPauseSeconds(in: samples, around: cut),
             sourceEndIndex: cut
         )
+    }
+
+    private func canStartPreview(_ session: Session) -> Bool {
+        session.context.incrementalCadence.previewTickSeconds != nil
+            && !session.cancelled
+            && session.releaseAudio == nil
+            && session.previewTask == nil
+            // A chunk in flight would commit past the preview's start and
+            // make its result stale.
+            && session.activeTask == nil
+            && session.pendingChunks.isEmpty
+    }
+
+    /// Transcribes the audio after the last committed chunk for the HUD.
+    /// The result is shown only if no chunk committed meanwhile, and it never
+    /// reaches the committed text, the final transcript, or failure handling.
+    private func startPreviewIfNeeded(_ session: Session, samples: [Float]) {
+        let cadence = session.context.incrementalCadence
+        guard canStartPreview(session),
+              samples.count >= Int(cadence.previewStartSeconds * AudioRecorder.sampleRate),
+              session.completedSampleEnd < samples.count else { return }
+        let start = session.completedSampleEnd
+        let range = start..<samples.count
+        guard range != session.lastPreviewRange else { return }
+        let audio = DictationAudioPreparation(samples: Array(samples[range]))
+        guard audio.isAdmitted else { return }
+        session.lastPreviewRange = range
+        let request = DictationTranscriptionRequest(
+            generation: session.generation,
+            segment: .preview,
+            samples: audio.samples,
+            lowEnergy: audio.lowEnergy
+        )
+        session.previewTask = Task { @MainActor [weak self, weak session] in
+            guard let self, let session else { return }
+            // Failures are already in the trace and must not change the dictation.
+            let text = try? await runTranscription(request, session: session)
+            session.previewTask = nil
+            guard let text, !text.isEmpty, isCurrent(session),
+                  session.releaseAudio == nil,
+                  session.completedSampleEnd == start else { return }
+            onPartialTranscript?(session.generation, Transcriber.joinTranscriptParts(
+                session.committedText, text, pauseSeconds: session.nextPauseSeconds
+            ))
+        }
     }
 
     func processIncrementalChunk(
@@ -331,6 +420,7 @@ final class DictationSessionPipeline {
             session.personalVoice?.finish(status: "cancelled")
             session.cancelled = true
             session.pendingChunks.removeAll()
+            session.previewTask = nil
             if interruptInference || session.activeTaskIsCleanup {
                 session.activeTask?.cancel()
             }
@@ -390,7 +480,12 @@ final class DictationSessionPipeline {
                     text,
                     pauseSeconds: chunk.pauseSecondsBefore
                 )
-                onPartialTranscript?(session.generation, session.committedText)
+                // With previews on, the HUD already shows these words plus
+                // the ones after the cut. Showing only the committed text
+                // would drop the newer words until the next preview.
+                if session.context.incrementalCadence.previewTickSeconds == nil {
+                    onPartialTranscript?(session.generation, session.committedText)
+                }
                 session.chunkCount += 1
                 session.completedSampleEnd = chunk.sourceEndIndex ?? session.completedSampleEnd
                 session.trace?.record(.chunkCompleted, fields: [
@@ -598,35 +693,38 @@ final class DictationSessionPipeline {
     private func runTranscription(_ request: DictationTranscriptionRequest, session: Session) async throws -> String {
         try Task.checkCancellation()
         guard isCurrent(session) else { throw CancellationError() }
-        session.diagnostics?.record(.init(stage: "transcriptionRequest", segment: request.segment, sampleCount: request.samples.count))
+        // A preview runs every second. Keeping its audio and text would bloat
+        // the opt-in diagnostic archive, so only the trace sees it.
+        let diagnostics = request.segment == .preview ? nil : session.diagnostics
+        diagnostics?.record(.init(stage: "transcriptionRequest", segment: request.segment, sampleCount: request.samples.count))
         session.trace?.record(.transcriptionRequested, fields: [.samples: Double(request.samples.count)], segment: request.segment)
         do {
             let text = try await DictationTrace.$current.withValue(session.trace) {
-                try await DictationDiagnosticStore.Recording.$current.withValue(session.diagnostics) {
+                try await DictationDiagnosticStore.Recording.$current.withValue(diagnostics) {
                     try await transcribe(request)
                 }
             }
             let abandoned = Task.isCancelled || !isCurrent(session)
             session.trace?.record(.transcriptionFinished, status: abandoned ? .cancelled : (text.isEmpty ? .empty : .success))
             if !abandoned {
-                session.diagnostics?.record(.init(stage: "transcriptionResult", text: text,
-                                                  status: text.isEmpty ? "empty" : "success", segment: request.segment))
+                diagnostics?.record(.init(stage: "transcriptionResult", text: text,
+                                          status: text.isEmpty ? "empty" : "success", segment: request.segment))
             }
             return text
         } catch Transcriber.TranscriberError.noSpeech {
             let abandoned = Task.isCancelled || !isCurrent(session)
             session.trace?.record(.transcriptionFinished, status: abandoned ? .cancelled : .insufficientVoice)
             if !abandoned {
-                session.diagnostics?.record(.init(stage: "transcriptionResult", text: "",
-                                                  status: "insufficientVoice", segment: request.segment))
+                diagnostics?.record(.init(stage: "transcriptionResult", text: "",
+                                          status: "insufficientVoice", segment: request.segment))
             }
             throw Transcriber.TranscriberError.noSpeech
         } catch {
             let abandoned = Task.isCancelled || !isCurrent(session)
             session.trace?.record(.transcriptionFinished, status: abandoned || error is CancellationError ? .cancelled : .failed)
             if !abandoned {
-                session.diagnostics?.record(.init(stage: "transcriptionResult", text: error.localizedDescription,
-                                                  status: "failed", segment: request.segment))
+                diagnostics?.record(.init(stage: "transcriptionResult", text: error.localizedDescription,
+                                          status: "failed", segment: request.segment))
             }
             throw error
         }
