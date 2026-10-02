@@ -563,6 +563,9 @@ struct SettingsView: View {
                     HelpRow(symbol: "mic.fill", title: "Dictate anywhere") {
                         Text("Hold **\(model.hotkey.label)**, speak, let go. The text is pasted where your cursor is. You can start the next dictation while the last one is still working.")
                     }
+                    HelpRow(symbol: "escape", title: "Changed your mind") {
+                        Text("Press **Escape** while holding the key, or while the dots show, and nothing gets pasted. It doesn't work in password fields.")
+                    }
                     HelpRow(symbol: "text.badge.plus", title: "Say the formatting") {
                         Text("\u{201C}new line\u{201D}, \u{201C}new paragraph\u{201D}, \u{201C}bullet point\u{201D}, \u{201C}numbered list\u{201D}, \u{201C}next item\u{201D}, and \u{201C}thumbs up emoji\u{201D} (and ~45 other emoji names) become real formatting.")
                     }

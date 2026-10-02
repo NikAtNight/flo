@@ -18,13 +18,15 @@ worth being explicit about them:
 | Capability | Why it needs it | Entitlement / permission |
 |---|---|---|
 | Microphone | Records while you hold the hotkey | `com.apple.security.device.audio-input`, TCC Microphone |
-| Global key monitoring | Detects the hold-to-talk key in any app, via a `CGEventTap` on modifier-key events only | TCC Accessibility |
+| Global key monitoring | Detects the hold-to-talk key in any app, via a `CGEventTap` on modifier-key events, plus a second tap that watches for Escape only while a dictation is recording or processing | TCC Accessibility |
 | Accessibility and synthesized keystrokes | Reads selected text in command mode through Accessibility and pastes with ⌘V | TCC Accessibility |
 | Clipboard access | Puts the transcript on the clipboard to paste it, then restores your previous contents | none (unrestricted on macOS) |
 | Network | Downloads the Whisper model on first run; talks to `localhost:11434` if the optional Ollama backend is used | `com.apple.security.network.client` |
 
-The event tap only observes `flagsChanged` (modifier) events. It does not
-observe or record character keystrokes.
+The hotkey tap only observes `flagsChanged` (modifier) events. A second tap
+watches `keyDown` for the Escape key only, and only while a dictation is
+recording or processing. It's disabled the rest of the time, so it receives
+nothing. Neither tap records character keystrokes.
 
 ## Where your data goes
 

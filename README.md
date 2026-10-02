@@ -209,6 +209,9 @@ Accessibility, remove LocalFlow with the − button and re-add the new build
   hourglass = transcribing.
 - You can start a new dictation immediately, even while the previous one is
   still transcribing.
+- Press **Escape** to cancel. While you hold the key it throws the recording
+  away. After release it cancels the dictation if the text hasn't been pasted
+  yet. Escape doesn't work in password fields (Secure Input).
 - Menu options:
   - **Hold to Talk** — switch the hotkey (Right Option / Right Command / Fn).
   - **Whisper Model** — Large v3 Turbo is the default and the best
