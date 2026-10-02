@@ -36,7 +36,7 @@ dictation history is a separate feature controlled by its existing setting.
 | `audioReleased` | Full/tail counts and submitted versus completed source-sample boundaries at handoff |
 | `engineWaitStarted` to `engineAcquired` | Shared Whisper engine wait |
 | `inferenceStarted` to `inferenceFinished` | WhisperKit call, with success/failure/cancellation status |
-| `transcriptionRequested` to `transcriptionFinished` | Whole request including adapter work, engine waiting, and text finalization; segment identifies chunk/tail/full |
+| `transcriptionRequested` to `transcriptionFinished` | Whole request including adapter work, engine waiting, and text finalization; segment identifies chunk/tail/full/preview |
 | `cleanupStarted` to `cleanupFinished` | Complete cleanup policy including discovery and sequential fallback |
 | `appleStarted` / `appleFinished` | Apple generation and validation attempt |
 | `ollamaDiscoveryStarted` / `ollamaDiscoveryFinished` | Local installed-model lookup before generation |
@@ -130,6 +130,10 @@ Replay loads the speech model once, reports model-load time separately, and uses
 same session pipeline and incremental cut logic as the app. It supplies audio
 prefixes in real time on the app's cadence for the chosen model: an 8-second
 first tick and 4-second later ticks for Whisper, or 4 and 2 seconds for Parakeet.
+Parakeet also gets a snapshot every second from 1 second for a `preview`
+transcription of the audio after the last completed chunk. Previews only feed
+the HUD, never the transcript, and skip the diagnostic archive, so their cost
+shows up only as `preview` segments in the timing events.
 It also invokes the usual cleanup prewarm at the start of each run.
 No microphone, event tap, target app, injection, or history is involved. No audio
 is automatically saved. Each completed transcript is printed to stdout as a

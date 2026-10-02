@@ -513,7 +513,10 @@ a folder shortcut, and **Delete All History**.
 - Live text is raw and lags. While the key is held, finished chunks show
   under the HUD without corrections or cleanup. With Whisper the first chunk
   is tried at 8 seconds and then every 4 seconds. Parakeet is faster, so it
-  starts at 4 seconds and ticks every 2. Text is pasted only after release.
+  starts at 4 seconds and ticks every 2. Parakeet also re-reads the words
+  after the last finished chunk every second from 1 second in, so text shows
+  up almost as you speak. Those previews only feed the HUD; the pasted text
+  still comes from the chunks and the tail. Text is pasted only after release.
   Turn it off in Settings > Dictation.
 - No cursor-context awareness yet (see plan roadmap).
 
