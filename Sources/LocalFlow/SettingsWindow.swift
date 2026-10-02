@@ -202,6 +202,13 @@ final class SettingsModel: ObservableObject {
         }
     }
 
+    @Published var liveTranscript: Bool = Settings.liveTranscript {
+        didSet {
+            guard oldValue != liveTranscript, !isSynchronizingApplicationValues else { return }
+            apply(.liveTranscript(liveTranscript))
+        }
+    }
+
     @Published var startAtLogin: Bool = false {
         didSet {
             guard oldValue != startAtLogin, !isSynchronizingApplicationValues else { return }
@@ -265,6 +272,7 @@ final class SettingsModel: ObservableObject {
         startAtLogin = settingsApplication.values.startAtLogin
         commandHotkey = settingsApplication.values.commandHotkey
         keepMicWarm = settingsApplication.values.keepMicWarm
+        liveTranscript = settingsApplication.values.liveTranscript
         cleanupEnabled = settingsApplication.values.cleanupEnabled
         commandModeEnabled = settingsApplication.values.commandModeEnabled
         theme = settingsApplication.values.theme
@@ -606,6 +614,7 @@ struct SettingsView: View {
             Section {
                 Toggle("Keep microphone warm between dictations", isOn: $model.keepMicWarm)
                 Toggle("Sound cues", isOn: $model.soundCues)
+                Toggle("Show live transcript in the HUD", isOn: $model.liveTranscript)
             } footer: {
                 Text("Holds the mic open for 2 minutes after each dictation so the next press is live instantly. While warm, the mic-in-use indicator stays on and Bluetooth headphones stay in call-quality audio.")
                     .font(.caption)

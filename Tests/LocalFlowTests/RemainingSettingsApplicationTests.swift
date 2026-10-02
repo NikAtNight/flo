@@ -49,6 +49,7 @@ final class RemainingSettingsApplicationTests: XCTestCase {
         ])
         XCTAssertEqual(application.values.commandHotkey, .rightCommand)
         XCTAssertFalse(application.values.keepMicWarm)
+        XCTAssertFalse(application.values.liveTranscript)
         XCTAssertTrue(application.values.cleanupEnabled)
         XCTAssertFalse(application.values.commandModeEnabled)
         XCTAssertEqual(application.values.theme, .aurora)
@@ -59,6 +60,7 @@ final class RemainingSettingsApplicationTests: XCTestCase {
         XCTAssertFalse(application.values.saveHistory)
         XCTAssertEqual(defaults.string(forKey: "commandHotkey"), HotkeyManager.Key.rightCommand.rawValue)
         XCTAssertEqual(defaults.object(forKey: "keepMicWarm") as? Bool, false)
+        XCTAssertEqual(defaults.object(forKey: "liveTranscript") as? Bool, false)
         XCTAssertEqual(defaults.object(forKey: "cleanupEnabled") as? Bool, true)
         XCTAssertEqual(defaults.object(forKey: "commandModeEnabled") as? Bool, false)
         XCTAssertEqual(defaults.string(forKey: "hudTheme"), HudTheme.aurora.rawValue)
@@ -75,7 +77,11 @@ final class RemainingSettingsApplicationTests: XCTestCase {
         let application = makeApplication(defaults: defaults, system: system)
 
         XCTAssertSuccess(application.apply(.commandHotkey(.rightOption)))
+        XCTAssertTrue(application.values.liveTranscript)
+        XCTAssertEqual(defaults.object(forKey: "liveTranscript") as? Bool, true)
+
         XCTAssertSuccess(application.apply(.keepMicWarm(true)))
+        XCTAssertSuccess(application.apply(.liveTranscript(true)))
         XCTAssertSuccess(application.apply(.cleanupEnabled(false)))
         XCTAssertSuccess(application.apply(.commandModeEnabled(true)))
         XCTAssertSuccess(application.apply(.theme(.classic)))
@@ -96,6 +102,7 @@ final class RemainingSettingsApplicationTests: XCTestCase {
 
         model.commandHotkey = .rightCommand
         model.keepMicWarm = false
+        model.liveTranscript = false
         model.cleanupEnabled = true
         model.commandModeEnabled = false
         model.theme = .aurora
@@ -115,6 +122,7 @@ final class RemainingSettingsApplicationTests: XCTestCase {
         ])
         XCTAssertEqual(application.values.commandHotkey, model.commandHotkey)
         XCTAssertEqual(application.values.keepMicWarm, model.keepMicWarm)
+        XCTAssertEqual(application.values.liveTranscript, model.liveTranscript)
         XCTAssertEqual(application.values.cleanupEnabled, model.cleanupEnabled)
         XCTAssertEqual(application.values.commandModeEnabled, model.commandModeEnabled)
         XCTAssertEqual(application.values.theme, model.theme)
@@ -128,6 +136,7 @@ final class RemainingSettingsApplicationTests: XCTestCase {
     private func applyChangedValues(to application: SettingsApplication) {
         XCTAssertSuccess(application.apply(.commandHotkey(.rightCommand)))
         XCTAssertSuccess(application.apply(.keepMicWarm(false)))
+        XCTAssertSuccess(application.apply(.liveTranscript(false)))
         XCTAssertSuccess(application.apply(.cleanupEnabled(true)))
         XCTAssertSuccess(application.apply(.commandModeEnabled(false)))
         XCTAssertSuccess(application.apply(.theme(.aurora)))
