@@ -1,5 +1,4 @@
 import XCTest
-import WhisperKit
 @testable import LocalFlow
 
 @MainActor
@@ -187,9 +186,9 @@ final class DictationSessionStallTests: XCTestCase {
 
     private func verifyNoncooperativeInference(dictations: Int) async throws {
         let blocked = NoncooperativeInference()
-        let old = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        let old = FakeEngine()
         old.inference = { await blocked.run() }
-        let replacement = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        let replacement = FakeEngine()
         replacement.inference = { syntheticResult("recovered words") }
         var loadCount = 0
         let transcriber = Transcriber(modelLoader: { _, _ in
@@ -246,9 +245,9 @@ final class DictationSessionStallTests: XCTestCase {
 
     func testQueuedRequestUsesReplacementAfterOrdinaryModelSwitch() async throws {
         let blocked = NoncooperativeInference()
-        let old = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        let old = FakeEngine()
         old.inference = { await blocked.run() }
-        let replacement = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        let replacement = FakeEngine()
         replacement.inference = { syntheticResult("new model") }
         let transcriber = Transcriber(modelLoader: { name, _ in name == "old" ? old : replacement })
         try await transcriber.load(model: "old")
@@ -271,9 +270,9 @@ final class DictationSessionStallTests: XCTestCase {
 
     func testCancellingOldInferenceAfterModelSwitchKeepsReplacementUsable() async throws {
         let blocked = NoncooperativeInference()
-        let old = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        let old = FakeEngine()
         old.inference = { await blocked.run() }
-        let replacement = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        let replacement = FakeEngine()
         replacement.inference = { syntheticResult("new model") }
         let transcriber = Transcriber(modelLoader: { name, _ in name == "old" ? old : replacement })
         try await transcriber.load(model: "old")
@@ -297,9 +296,9 @@ final class DictationSessionStallTests: XCTestCase {
     func testRecoveryCapsQuarantinedEnginesUntilOldInferenceReturns() async throws {
         let firstBlocked = NoncooperativeInference()
         let secondBlocked = NoncooperativeInference()
-        let first = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        let first = FakeEngine()
         first.inference = { await firstBlocked.run() }
-        let second = try await SyntheticWhisperKit(WhisperKitConfig(verbose: false, load: false, download: false))
+        let second = FakeEngine()
         second.inference = { await secondBlocked.run() }
         var loads = 0
         let transcriber = Transcriber(modelLoader: { _, _ in
@@ -417,22 +416,21 @@ private actor StallCaseTranscriber {
     }
 }
 
-private final class SyntheticWhisperKit: WhisperKit {
-    var inference: (() async throws -> [TranscriptionResult])?
+private final class FakeEngine: SpeechEngine, @unchecked Sendable {
+    var inference: (() async throws -> EngineTranscription)?
 
-    override func transcribe(
-        audioArray: [Float], decodeOptions: DecodingOptions? = nil,
-        callback: TranscriptionCallback? = nil, segmentCallback: SegmentDiscoveryCallback? = nil
-    ) async throws -> [TranscriptionResult] {
-        try await inference?() ?? []
+    func transcribe(samples: [Float], lowEnergy: Bool) async throws -> EngineTranscription {
+        try await inference?() ?? syntheticResult("")
     }
+
+    func setVocabulary(_ terms: String) async {}
 }
 
 private actor NoncooperativeInference {
     private(set) var calls = 0
-    private var pending: CheckedContinuation<[TranscriptionResult], Never>?
+    private var pending: CheckedContinuation<EngineTranscription, Never>?
 
-    func run() async -> [TranscriptionResult] {
+    func run() async -> EngineTranscription {
         calls += 1
         return await withCheckedContinuation { pending = $0 }
     }
@@ -443,7 +441,7 @@ private actor NoncooperativeInference {
     }
 }
 
-private func syntheticResult(_ text: String) -> [TranscriptionResult] {
-    [.init(text: text, segments: [.init(start: 0, end: 1, text: text)],
-           language: "en", timings: .init())]
+private func syntheticResult(_ text: String) -> EngineTranscription {
+    EngineTranscription(segments: [.init(text: text, start: 0, end: 1)], rawText: text,
+                        decodingFallbacks: 0, resultCount: 1)
 }
