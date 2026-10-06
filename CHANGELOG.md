@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.0](https://github.com/NikAtNight/walkie/compare/v1.8.0...v1.9.0) (2026-10-06)
+
+
+### Features
+
+* one app icon for every theme, with light and dark variants ([ffa14e1](https://github.com/NikAtNight/walkie/commit/ffa14e1b2203662ab15042ba85d4fc61ff2106b7))
+* plain lit screen on the walkie-talkie app icon ([fe188d3](https://github.com/NikAtNight/walkie/commit/fe188d335ef4730d537306ac7fc5bfe898577800))
+* walkie-talkie app icon in every listening theme ([2938147](https://github.com/NikAtNight/walkie/commit/29381475da4b629f6be3000890cd60ab2bc73335))
+
 ## [1.8.0](https://github.com/NikAtNight/walkie/compare/v1.7.0...v1.8.0) (2026-10-06)
 
 
