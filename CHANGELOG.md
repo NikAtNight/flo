@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/NikAtNight/walkie/compare/v1.7.0...v1.8.0) (2026-10-06)
+
+
+### Features
+
+* rename LocalFlow to Walkie ([ad726e1](https://github.com/NikAtNight/walkie/commit/ad726e1ab78e1fc591a6a357a246f0769c05af31))
+* walkie-talkie menubar icon that animates while you talk ([56f5ac7](https://github.com/NikAtNight/walkie/commit/56f5ac731a26275c0f0eda5c05e9b6335df18e12))
+
 ## [1.7.0](https://github.com/NikAtNight/localflow/compare/v1.6.2...v1.7.0) (2026-10-02)
 
 
