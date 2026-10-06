@@ -6,7 +6,7 @@ struct DiagnosticsArchive {
     static let current = forIdentity(.current)
     static func forIdentity(_ identity: AppIdentity) -> Self {
         Self(directory: FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/\(identity.name)/Diagnostics", isDirectory: true),
+            .appendingPathComponent("Library/Application Support/\(identity.storageDirectory)/Diagnostics", isDirectory: true),
              retentionDays: identity.isLocal ? nil : 30)
     }
     let directory: URL
@@ -125,7 +125,7 @@ struct DiagnosticsArchive {
         defer { try? FileManager.default.removeItem(at: temporary) }
         let handle = try FileHandle(forWritingTo: temporary)
         do {
-            try handle.write(contentsOf: Data("LocalFlow diagnostics\nTiming and build/device metadata only. No transcripts or audio.\n".utf8))
+            try handle.write(contentsOf: Data("Walkie diagnostics\nTiming and build/device metadata only. No transcripts or audio.\n".utf8))
             for file in try traceFiles() {
                 let snapshot = try DiagnosticsSnapshot.read(from: file, maximumBytes: Int.max)
                 for trace in snapshot.traces where isRetained(trace.startedAt, now: now) {

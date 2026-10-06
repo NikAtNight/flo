@@ -658,7 +658,7 @@ reset_publication_fixture() {
         '  "api --paginate "*) exit 0 ;;' \
         '  *"--json isDraft"*) printf "true\\n" ;;' \
         '  *"--json targetCommitish"*) printf "%s\\n" "$COMMIT_SHA" ;;' \
-        '  *"--json assets"*) printf "%s\\n" "LocalFlow-${APP_VERSION}.dmg" "LocalFlow-${APP_VERSION}.zip" "SHA256SUMS.txt" "appcast.xml" "setup-s1-mini.sh" ;;' \
+        '  *"--json assets"*) printf "%s\\n" "Walkie-${APP_VERSION}.dmg" "Walkie-${APP_VERSION}.zip" "SHA256SUMS.txt" "appcast.xml" "setup-s1-mini.sh" ;;' \
         '  "release create "*|"release upload "*|"release edit "*) printf "%s\\n" "$*" >> "$GH_LOG" ;;' \
         '  *) printf "unexpected gh call: %s\\n" "$*" >&2; exit 1 ;;' \
         'esac' > "$TEST_ROOT/fake-bin/gh"
@@ -684,14 +684,14 @@ run_publication_step() {
 }
 
 write_appcast() {
-    local archive_name="${1:-LocalFlow-1.2.3.zip}"
+    local archive_name="${1:-Walkie-1.2.3.zip}"
     local signature="${2-test-signature}"
     printf '%s\n' \
         '<?xml version="1.0" encoding="utf-8"?>' \
         '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">' \
         '  <channel>' \
         '    <item>' \
-        "      <enclosure url=\"https://github.com/NikAtNight/localflow/releases/download/v1.2.3/$archive_name\" sparkle:edSignature=\"$signature\" />" \
+        "      <enclosure url=\"https://github.com/NikAtNight/walkie/releases/download/v1.2.3/$archive_name\" sparkle:edSignature=\"$signature\" />" \
         '    </item>' \
         '  </channel>' \
         '</rss>' > "$DIST_DIR/appcast.xml"
@@ -700,13 +700,13 @@ write_appcast() {
 reset_artifact_fixture() {
     rm -rf "$DIST_DIR"
     mkdir -p "$DIST_DIR"
-    printf 'dmg\n' > "$DIST_DIR/LocalFlow-1.2.3.dmg"
-    printf 'zip\n' > "$DIST_DIR/LocalFlow-1.2.3.zip"
+    printf 'dmg\n' > "$DIST_DIR/Walkie-1.2.3.dmg"
+    printf 'zip\n' > "$DIST_DIR/Walkie-1.2.3.zip"
     printf '#!/bin/bash\n' > "$DIST_DIR/setup-s1-mini.sh"
     write_appcast
     printf '%s\n' \
-        'test  LocalFlow-1.2.3.dmg' \
-        'test  LocalFlow-1.2.3.zip' \
+        'test  Walkie-1.2.3.dmg' \
+        'test  Walkie-1.2.3.zip' \
         'test  setup-s1-mini.sh' > "$DIST_DIR/SHA256SUMS.txt"
 }
 
@@ -727,7 +727,7 @@ run_artifact_validation() {
 }
 
 reset_app_bundle_fixture() {
-    APP_BUNDLE_PATH="$TEST_ROOT/LocalFlow.app"
+    APP_BUNDLE_PATH="$TEST_ROOT/Walkie.app"
     rm -rf "$APP_BUNDLE_PATH"
     mkdir -p "$APP_BUNDLE_PATH/Contents/Frameworks/Sparkle.framework"
     cp "$REPO_ROOT/Resources/Info.plist" "$APP_BUNDLE_PATH/Contents/Info.plist"
@@ -766,7 +766,7 @@ test_release_uses_one_signed_updatable_artifact_set() {
         fail 'the verified release path must not expose diverging release-state flags'
         return
     fi
-    assert_file_contains "$RELEASE_WORKFLOW" '"LocalFlow-${APP_VERSION}.zip"' || return
+    assert_file_contains "$RELEASE_WORKFLOW" '"Walkie-${APP_VERSION}.zip"' || return
     assert_file_contains "$RELEASE_WORKFLOW" '"dist/appcast.xml"'
 }
 
@@ -857,8 +857,8 @@ test_complete_artifacts() {
 test_each_required_artifact() {
     local path
     for path in \
-        'LocalFlow-1.2.3.dmg' \
-        'LocalFlow-1.2.3.zip' \
+        'Walkie-1.2.3.dmg' \
+        'Walkie-1.2.3.zip' \
         'appcast.xml' \
         'SHA256SUMS.txt' \
         'setup-s1-mini.sh'
@@ -872,32 +872,32 @@ test_each_required_artifact() {
 
 test_appcast_archive_name() {
     reset_artifact_fixture
-    write_appcast 'LocalFlow-1.2.2.zip'
+    write_appcast 'Walkie-1.2.2.zip'
     run_artifact_validation
-    assert_failure_containing 'LocalFlow-1.2.3.zip'
+    assert_failure_containing 'Walkie-1.2.3.zip'
 }
 
 test_appcast_signature() {
     reset_artifact_fixture
-    write_appcast 'LocalFlow-1.2.3.zip' ''
+    write_appcast 'Walkie-1.2.3.zip' ''
     run_artifact_validation
     assert_failure_containing 'edSignature'
 }
 
 test_checksum_manifest_coverage() {
     reset_artifact_fixture
-    printf 'test  LocalFlow-1.2.3.dmg\n' > "$DIST_DIR/SHA256SUMS.txt"
+    printf 'test  Walkie-1.2.3.dmg\n' > "$DIST_DIR/SHA256SUMS.txt"
     run_artifact_validation
-    assert_failure_containing 'LocalFlow-1.2.3.zip'
+    assert_failure_containing 'Walkie-1.2.3.zip'
 }
 
 test_checksum_contents() {
     reset_artifact_fixture
     (
         cd "$DIST_DIR"
-        shasum -a 256 LocalFlow-1.2.3.dmg LocalFlow-1.2.3.zip setup-s1-mini.sh > SHA256SUMS.txt
+        shasum -a 256 Walkie-1.2.3.dmg Walkie-1.2.3.zip setup-s1-mini.sh > SHA256SUMS.txt
     )
-    printf 'changed archive\n' > "$DIST_DIR/LocalFlow-1.2.3.zip"
+    printf 'changed archive\n' > "$DIST_DIR/Walkie-1.2.3.zip"
     VERIFY_CHECKSUMS=true run_artifact_validation
     assert_failure_containing 'SHA256SUMS.txt does not match the release artifacts'
 }
@@ -930,13 +930,13 @@ test_dmg_is_signed_after_packaging_before_notarization() {
     assert_logged_call codesign \
         --sign \
         'Developer ID Application: LocalFlow Test (TESTTEAM01)' \
-        dist/LocalFlow-1.2.3.dmg || return
-    assert_logged_call xcrun notarytool submit dist/LocalFlow-1.2.3.dmg || return
+        dist/Walkie-1.2.3.dmg || return
+    assert_logged_call xcrun notarytool submit dist/Walkie-1.2.3.dmg || return
 
     package_line="$(grep -n -m1 '^make-dmg' "$RELEASE_TOOL_LOG" | cut -d: -f1)"
-    sign_line="$(grep -n -m1 '^codesign .*<dist/LocalFlow-1\.2\.3\.dmg>' \
+    sign_line="$(grep -n -m1 '^codesign .*<dist/Walkie-1\.2\.3\.dmg>' \
         "$RELEASE_TOOL_LOG" | cut -d: -f1)"
-    notarize_line="$(grep -n -m1 '^xcrun .*<notarytool>.*<submit>.*<dist/LocalFlow-1\.2\.3\.dmg>' \
+    notarize_line="$(grep -n -m1 '^xcrun .*<notarytool>.*<submit>.*<dist/Walkie-1\.2\.3\.dmg>' \
         "$RELEASE_TOOL_LOG" | cut -d: -f1)"
     [[ -n "$package_line" && -n "$sign_line" && -n "$notarize_line" && \
         "$package_line" -lt "$sign_line" && "$sign_line" -lt "$notarize_line" ]] || {
@@ -950,16 +950,16 @@ test_signed_dmg_passes_codesign_gatekeeper_and_stapler_checks() {
     reset_release_tool_fixture
     run_release_script "$RELEASE_STEP_SCRIPT"
     assert_success || return
-    assert_logged_call codesign --verify build/LocalFlow.app || return
-    assert_logged_call spctl --assess --type execute build/LocalFlow.app || return
-    assert_logged_call xcrun stapler validate build/LocalFlow.app || return
-    assert_logged_call codesign --verify dist/LocalFlow-1.2.3.dmg || return
+    assert_logged_call codesign --verify build/Walkie.app || return
+    assert_logged_call spctl --assess --type execute build/Walkie.app || return
+    assert_logged_call xcrun stapler validate build/Walkie.app || return
+    assert_logged_call codesign --verify dist/Walkie-1.2.3.dmg || return
     assert_logged_call spctl \
         --assess \
         --type open \
         --context context:primary-signature \
-        dist/LocalFlow-1.2.3.dmg || return
-    assert_logged_call xcrun stapler validate dist/LocalFlow-1.2.3.dmg
+        dist/Walkie-1.2.3.dmg || return
+    assert_logged_call xcrun stapler validate dist/Walkie-1.2.3.dmg
 }
 
 test_release_source_is_main_ancestry() {
@@ -985,7 +985,7 @@ test_release_workflow_validates_before_publication() {
     draft_line="$(grep -n -m1 'name: Create verified draft release' "$RELEASE_WORKFLOW" | cut -d: -f1)"
     [[ -n "$validate_line" && -n "$draft_line" && "$validate_line" -lt "$draft_line" ]] || \
         fail 'release artifact validation must run before draft creation'
-    assert_file_contains "$RELEASE_WORKFLOW" 'APP_BUNDLE_PATH: build/LocalFlow.app' || return
+    assert_file_contains "$RELEASE_WORKFLOW" 'APP_BUNDLE_PATH: build/Walkie.app' || return
     assert_file_contains "$RELEASE_WORKFLOW" 'VERIFY_CHECKSUMS: "true"'
 }
 

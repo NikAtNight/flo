@@ -6,7 +6,7 @@ import Foundation
 final class DictationDiagnosticStore: @unchecked Sendable {
     static let writeFailedNotification = Notification.Name("LocalFlowDiagnosticRecordingWriteFailed")
     static let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("\(AppIdentity.current.name)/DiagnosticRecordings", isDirectory: true)
+        .appendingPathComponent("\(AppIdentity.current.storageDirectory)/DiagnosticRecordings", isDirectory: true)
     static let shared = DictationDiagnosticStore(folder: folder)
 
     struct Metadata: Codable {

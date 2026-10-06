@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<!-- LaunchAgent (registered via SMAppService.agent) instead of a plain
-	     login item: KeepAlive below makes launchd relaunch LocalFlow after a
+	     login item: KeepAlive below makes launchd relaunch Walkie after a
 	     crash, while a clean quit (exit 0) stays quit. -->
 	<key>Label</key>
 	<string>app.talix.localflow</string>

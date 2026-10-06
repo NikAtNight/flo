@@ -13,8 +13,11 @@ struct AppIdentity {
     }
 
     var bundleIdentifier: String { isLocal ? Self.localID : Self.productionID }
-    var name: String { isLocal ? "LocalFlow Local" : "LocalFlow" }
-    var historyDirectory: String { "\(name)/History" }
+    var name: String { isLocal ? "Walkie Local" : "Walkie" }
+    /// The Application Support folder. It kept the pre-rename name so
+    /// existing history, diagnostics, and models stay where they are.
+    var storageDirectory: String { isLocal ? "LocalFlow Local" : "LocalFlow" }
+    var historyDirectory: String { "\(storageDirectory)/History" }
     var logFilename: String { isLocal ? "LocalFlow-Local-diag.log" : "LocalFlow-diag.log" }
 }
 

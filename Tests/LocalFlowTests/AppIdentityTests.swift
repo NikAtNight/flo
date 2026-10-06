@@ -6,7 +6,8 @@ final class AppIdentityTests: XCTestCase {
         let local = AppIdentity(bundleIdentifier: AppIdentity.localID)
         let production = AppIdentity(bundleIdentifier: AppIdentity.productionID)
         XCTAssertTrue(local.isLocal)
-        XCTAssertEqual(local.name, "LocalFlow Local")
+        XCTAssertEqual(local.name, "Walkie Local")
+        XCTAssertEqual(production.name, "Walkie")
         XCTAssertNotEqual(local.historyDirectory, production.historyDirectory)
         XCTAssertNotEqual(local.logFilename, production.logFilename)
     }

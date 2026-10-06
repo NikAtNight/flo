@@ -5,18 +5,18 @@
 Requires macOS 14+ and the Swift toolchain (Xcode Command Line Tools are enough).
 
 ```bash
-./scripts/make-app.sh            # release build, packaged as build/LocalFlow.app
-open build/LocalFlow.app
-./scripts/make-dmg.sh            # wrap the built app in dist/LocalFlow-<version>.dmg
+./scripts/make-app.sh            # release build, packaged as build/Walkie.app
+open build/Walkie.app
+./scripts/make-dmg.sh            # wrap the built app in dist/Walkie-<version>.dmg
 ```
 
 `make-app.sh` signs with the stable `Talix Dev Signing` identity when it's
 present, otherwise with a pinned ad-hoc requirement. `swift run` works for quick
 iteration, but then Microphone and Accessibility attach to your terminal app
-instead of LocalFlow. Use the app bundle for real testing.
+instead of Walkie. Use the app bundle for real testing.
 
 If the hotkey stops working after a rebuild, macOS is holding a stale
-Accessibility grant. Remove LocalFlow in System Settings > Accessibility and
+Accessibility grant. Remove Walkie in System Settings > Accessibility and
 add the new build back (or toggle it off and on).
 
 ## Local test channel
@@ -25,13 +25,13 @@ add the new build back (or toggle it off and on).
 test without touching the release build:
 
 ```bash
-./scripts/local-app.sh install     # build, install LocalFlow Local, wait until the model is ready
+./scripts/local-app.sh install     # build, install Walkie Local, wait until the model is ready
 ./scripts/local-app.sh production  # quit local and open production
 ./scripts/local-app.sh local       # switch back without rebuilding
 ```
 
-- Production stays at `/Applications/LocalFlow.app`. The local copy is
-  `/Applications/LocalFlow Local.app` with bundle ID `app.talix.localflow.local`.
+- Production stays at `/Applications/Walkie.app`. The local copy is
+  `/Applications/Walkie Local.app` with bundle ID `app.talix.localflow.local`.
   Grant it Microphone and Accessibility on first launch.
 - Run one app at a time. The switch commands quit both before opening the
   target, and refuse to switch while a dictation is active.
@@ -68,8 +68,8 @@ transcription, formatting, snippets, cleanup) without the mic, paste, or
 history:
 
 ```bash
-build/LocalFlow.app/Contents/MacOS/LocalFlow --replay /path/to/test.wav --runs 5 --no-cleanup
-build/LocalFlow.app/Contents/MacOS/LocalFlow --replay /path/to/test.wav --runs 5 --cleanup
+build/Walkie.app/Contents/MacOS/LocalFlow --replay /path/to/test.wav --runs 5 --no-cleanup
+build/Walkie.app/Contents/MacOS/LocalFlow --replay /path/to/test.wav --runs 5 --cleanup
 ```
 
 Text goes to stdout, timing events to stderr. `--transcribe <file>` does a

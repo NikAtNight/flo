@@ -228,7 +228,7 @@ enum TextInjector {
         case unavailable
 
         var errorDescription: String? {
-            "The focused app doesn't expose a readable text selection. Focus an editable text field and check LocalFlow's Accessibility permission, then try again."
+            "The focused app doesn't expose a readable text selection. Focus an editable text field and check Walkie's Accessibility permission, then try again."
         }
     }
 

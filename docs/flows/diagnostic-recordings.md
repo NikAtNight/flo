@@ -3,7 +3,7 @@
 ## Requirement and ownership
 
 The user requested retained audio and raw transcripts on September 10, 2026,
-after a dictation silently lost its ending. Owner: LocalFlow maintainers.
+after a dictation silently lost its ending. Owner: Walkie maintainers.
 Capture enough evidence to distinguish audio capture, recognition, formatting,
 cleanup, and dispatch failures. Recognition accuracy and decoder settings are
 unchanged. The separate daily transcript log keeps its existing behavior.

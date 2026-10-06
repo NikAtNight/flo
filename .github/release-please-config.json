@@ -4,7 +4,7 @@
   "include-component-in-tag": false,
   "packages": {
     ".": {
-      "package-name": "LocalFlow",
+      "package-name": "Walkie",
       "changelog-path": "CHANGELOG.md"
     }
   },

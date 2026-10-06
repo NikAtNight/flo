@@ -63,7 +63,7 @@ def main():
     started = time.monotonic()
     deadline = started + 330
     try:
-        subprocess.run(["open", "/Applications/LocalFlow Local.app"], check=True)
+        subprocess.run(["open", "/Applications/Walkie Local.app"], check=True)
         print("Preparing speech recognition for this Mac. Waiting for the app...", flush=True)
         while True:
             if path.exists():

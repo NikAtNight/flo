@@ -5,7 +5,7 @@
 The user requested longer local retention of their dictations for future voice
 and speaking-style experiments, then asked to implement the proposed archive,
 original-rate capture, transcript review/export, and a small local voice trial.
-The LocalFlow maintainer owns this flow. Production collection, automatic
+The Walkie maintainer owns this flow. Production collection, automatic
 transcript approval, model fine-tuning, and a conversational agent are outside
 this change.
 

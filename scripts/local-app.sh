@@ -9,12 +9,17 @@ case "$ACTION" in
     *) echo "Usage: $0 [install|local|production]" >&2; exit 2 ;;
 esac
 
-LOCAL_APP="/Applications/LocalFlow Local.app"
-PRODUCTION_APP="/Applications/LocalFlow.app"
+LOCAL_APP="/Applications/Walkie Local.app"
+# Sparkle updates in place, so installs from before the rename keep the old
+# bundle name until someone reinstalls from the DMG.
+PRODUCTION_APP="/Applications/Walkie.app"
+if [[ ! -d "$PRODUCTION_APP" && -d /Applications/LocalFlow.app ]]; then
+    PRODUCTION_APP="/Applications/LocalFlow.app"
+fi
 if [[ "$ACTION" == "install" ]]; then
     VERSION="$(python3 -c 'import json; print(json.load(open(".github/.release-please-manifest.json"))["."])')"
     LOCAL_BUILD=1 UPDATER_ENABLED=false SKIP_PREWARM=1 APP_VERSION="$VERSION" ./scripts/make-app.sh
-    codesign --verify --deep --strict "build/LocalFlow Local.app"
+    codesign --verify --deep --strict "build/Walkie Local.app"
 fi
 
 if [[ "$ACTION" == "production" ]]; then
@@ -34,7 +39,8 @@ import json
 from pathlib import Path
 import subprocess
 
-for name, log_name in (("LocalFlow", "LocalFlow-diag.log"), ("LocalFlow Local", "LocalFlow-Local-diag.log")):
+for name, log_name in (("Walkie", "LocalFlow-diag.log"), ("LocalFlow", "LocalFlow-diag.log"),
+                       ("Walkie Local", "LocalFlow-Local-diag.log"), ("LocalFlow Local", "LocalFlow-Local-diag.log")):
     running = subprocess.run(["pgrep", "-f", rf"^/Applications/{name}\.app/Contents/MacOS/LocalFlow$"], capture_output=True, text=True)
     if running.returncode != 0:
         continue
@@ -61,9 +67,9 @@ PY_CHECK_IDLE
 
 # Clean termination keeps the production KeepAlive agent from restarting.
 # Never force-quit a recording or overwrite an app that is still running.
-for APP_NAME in LocalFlow "LocalFlow Local"; do
+for APP_NAME in Walkie LocalFlow "Walkie Local" "LocalFlow Local"; do
     BUNDLE_ID="app.talix.localflow"
-    if [[ "$APP_NAME" == "LocalFlow Local" ]]; then
+    if [[ "$APP_NAME" == *" Local" ]]; then
         BUNDLE_ID="app.talix.localflow.local"
     fi
     if pgrep -f "^/Applications/$APP_NAME\\.app/Contents/MacOS/LocalFlow$" >/dev/null; then
@@ -71,13 +77,13 @@ for APP_NAME in LocalFlow "LocalFlow Local"; do
     fi
 done
 for _ in 1 2 3 4 5; do
-    if ! pgrep -f '^/Applications/LocalFlow( Local)?\.app/Contents/MacOS/LocalFlow$' >/dev/null; then
+    if ! pgrep -f '^/Applications/(Walkie|LocalFlow)( Local)?\.app/Contents/MacOS/LocalFlow$' >/dev/null; then
         break
     fi
     sleep 1
 done
-if pgrep -f '^/Applications/LocalFlow( Local)?\.app/Contents/MacOS/LocalFlow$' >/dev/null; then
-    echo "error: LocalFlow is still running; finish dictating and quit it before switching" >&2
+if pgrep -f '^/Applications/(Walkie|LocalFlow)( Local)?\.app/Contents/MacOS/LocalFlow$' >/dev/null; then
+    echo "error: Walkie is still running; finish dictating and quit it before switching" >&2
     exit 1
 fi
 
@@ -102,14 +108,19 @@ if existing.returncode != 0 or not plistlib.loads(existing.stdout):
         subprocess.run(['/usr/bin/defaults', 'import', local_id, f.name], check=True, stdout=subprocess.DEVNULL)
 PY
     # Stage on the same volume. Preserve the previous local app for recovery.
-    STAGING="$(mktemp -d /Applications/.localflow-local.XXXXXX)"
-    ditto "build/LocalFlow Local.app" "$STAGING/LocalFlow Local.app"
-    codesign --verify --deep --strict "$STAGING/LocalFlow Local.app"
+    STAGING="$(mktemp -d /Applications/.walkie-local.XXXXXX)"
+    ditto "build/Walkie Local.app" "$STAGING/Walkie Local.app"
+    codesign --verify --deep --strict "$STAGING/Walkie Local.app"
     if [[ -e "$LOCAL_APP" ]]; then
-        mv "$LOCAL_APP" "$STAGING/Previous LocalFlow Local.app"
+        mv "$LOCAL_APP" "$STAGING/Previous Walkie Local.app"
         echo "Previous local build saved in $STAGING"
     fi
-    mv "$STAGING/LocalFlow Local.app" "$LOCAL_APP"
+    # Pre-rename copy: same bundle ID, so it must not stay next to the new one.
+    if [[ -e "/Applications/LocalFlow Local.app" ]]; then
+        mv "/Applications/LocalFlow Local.app" "$STAGING/Previous LocalFlow Local.app"
+        echo "Pre-rename local build saved in $STAGING"
+    fi
+    mv "$STAGING/Walkie Local.app" "$LOCAL_APP"
     rmdir "$STAGING" 2>/dev/null || true
 fi
 

@@ -1,4 +1,4 @@
-# LocalFlow
+# Walkie
 
 Push-to-talk dictation for Apple Silicon Macs that runs entirely on your
 machine. Hold a key, speak, let go, and the text is pasted into whatever app
@@ -17,8 +17,8 @@ optionally be cleaned up by a local LLM. No audio leaves the Mac.
 
 ## Install
 
-Download `LocalFlow-<version>.dmg` from the [releases page](../../releases)
-and drag LocalFlow to Applications. Builds are signed and notarized.
+Download `Walkie-<version>.dmg` from the [releases page](../../releases)
+and drag Walkie to Applications. Builds are signed and notarized.
 
 On first launch, grant two permissions:
 
@@ -29,15 +29,20 @@ On first launch, grant two permissions:
 The first launch downloads the model and lets Core ML prepare it, which can
 take a few minutes. The menubar shows Ready when it's done.
 
-LocalFlow lives in the menubar and starts at login. It updates itself through
+Walkie lives in the menubar and starts at login. It updates itself through
 [Sparkle](https://sparkle-project.org) once a day (you can turn that off in
 Settings). To uninstall, quit it, delete the app, and delete
 `~/Library/Application Support/LocalFlow/`.
 
+Walkie was called LocalFlow before 1.8.0. Existing installs update in place
+and keep their settings, permissions, and data. The data folder and log file
+still use the LocalFlow name, and an updated copy stays at
+`/Applications/LocalFlow.app` until you reinstall from the DMG.
+
 To check a download came from this repo's release workflow:
 
 ```bash
-gh attestation verify LocalFlow-<version>.dmg --repo NikAtNight/localflow
+gh attestation verify Walkie-<version>.dmg --repo NikAtNight/walkie
 shasum -a 256 -c SHA256SUMS.txt   # attached to each release
 ```
 
@@ -79,7 +84,7 @@ brew services start ollama
 ./scripts/setup-s1-mini.sh   # also attached to each release
 ```
 
-If the cleanup backend is down, LocalFlow pastes the raw transcript.
+If the cleanup backend is down, Walkie pastes the raw transcript.
 
 ### Command mode
 
@@ -90,7 +95,7 @@ model (`gemma3:4b` by default).
 
 ## Privacy
 
-There's no account, server, or telemetry. The only network request LocalFlow
+There's no account, server, or telemetry. The only network request Walkie
 makes on its own is the model download (plus the update check, if enabled).
 The hotkey monitor sees modifier keys only, never characters. Optional
 diagnostic recordings are off by default and stay local. See
@@ -99,7 +104,7 @@ diagnostic recordings are off by default and stay local. See
 ## Limitations
 
 - Whisper models are English-only by default.
-- In password fields, LocalFlow types instead of pasting, and some apps
+- In password fields, Walkie types instead of pasting, and some apps
   ignore synthesized keystrokes. Escape doesn't work there either.
 - Recordings stop at 5 minutes.
 

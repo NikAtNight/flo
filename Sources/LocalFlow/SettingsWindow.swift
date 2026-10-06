@@ -548,7 +548,7 @@ struct SettingsView: View {
                 Text("Startup")
             } footer: {
                 if AppIdentity.current.isLocal {
-                    Text("Unavailable in LocalFlow Local. The production app keeps its login setting so both copies don't start together.")
+                    Text("Unavailable in Walkie Local. The production app keeps its login setting so both copies don't start together.")
                 }
             }
 
@@ -559,7 +559,7 @@ struct SettingsView: View {
                 Text("Updates")
             } footer: {
                 if !UpdateController.isSupported {
-                    Text("Unavailable in this local build. Rebuild LocalFlow Local to test changes; the production app receives published updates.")
+                    Text("Unavailable in this local build. Rebuild Walkie Local to test changes; the production app receives published updates.")
                 } else {
                     Text("Checks once a day and installs the next time you quit. Updates are signed, and one that fails verification is discarded rather than installed. \u{201C}Check for Updates\u{2026}\u{201D} in the menubar looks right now.")
                         .font(.caption)
@@ -567,7 +567,7 @@ struct SettingsView: View {
                 }
             }
             Section {
-                DisclosureGroup("Using LocalFlow") {
+                DisclosureGroup("Using Walkie") {
                     HelpRow(symbol: "mic.fill", title: "Dictate anywhere") {
                         Text("Hold **\(model.hotkey.label)**, speak, let go. The text is pasted where your cursor is. You can start the next dictation while the last one is still working.")
                     }
@@ -586,7 +586,7 @@ struct SettingsView: View {
                         }
                     }
                     HelpRow(symbol: "arrow.uturn.backward", title: "When it gets a word wrong") {
-                        Text("Fix it in your app, copy it, then pick **Fix Last Dictation\u{2026}** in the menubar. LocalFlow learns the word and starts hearing it correctly.")
+                        Text("Fix it in your app, copy it, then pick **Fix Last Dictation\u{2026}** in the menubar. Walkie learns the word and starts hearing it correctly.")
                     }
                     HelpRow(symbol: "lock.fill", title: "Everything stays here") {
                         Text("Speech never leaves this Mac. Transcription and cleanup both run locally, and the history is a plain folder you own.")
@@ -955,7 +955,7 @@ struct SettingsView: View {
             } header: {
                 Text("Diagnostic recordings")
             } footer: {
-                Text("Saves recordings and transcript stages on this Mac, keeping 7 days within a 1 GB limit. Cleanup runs at launch, on saves, and hourly while LocalFlow is open. Files may contain sensitive speech. Turning this off stops saving new recordings; Delete all diagnostics removes saved files now.")
+                Text("Saves recordings and transcript stages on this Mac, keeping 7 days within a 1 GB limit. Cleanup runs at launch, on saves, and hourly while Walkie is open. Files may contain sensitive speech. Turning this off stops saving new recordings; Delete all diagnostics removes saved files now.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

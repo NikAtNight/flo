@@ -32,7 +32,7 @@ struct DiagnosticsPane: View {
                      ? "Timing history is kept across updates with no automatic expiry. No transcripts or audio."
                      : "Timing history is kept for 30 days across updates. No transcripts or audio. Nothing is uploaded automatically.")
                 Text("Dispatch means the paste or typing event was sent. Visible text insertion is not measured; clipboard restoration is a separate event.")
-                Text("~/Library/Application Support/\(AppIdentity.current.name)/Diagnostics")
+                Text("~/Library/Application Support/\(AppIdentity.current.storageDirectory)/Diagnostics")
                     .textSelection(.enabled)
                 if let exportMessage { Text(exportMessage) }
                 if let refreshedAt {
@@ -90,7 +90,7 @@ struct DiagnosticsPane: View {
     private func export() async {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = "LocalFlow-diagnostics.txt"
+        panel.nameFieldStringValue = "Walkie-diagnostics.txt"
         panel.message = "Save timing and build/device metadata to share with support. No transcripts or audio are included."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         exporting = true

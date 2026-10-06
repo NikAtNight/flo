@@ -2,7 +2,7 @@
 
 ## Requirement and owner
 
-Owner: LocalFlow maintainers. Requested September 9, 2026 after the user confirmed
+Owner: Walkie maintainers. Requested September 9, 2026 after the user confirmed
 speaking during a recording whose final recognition result was empty. Recover
 empty dictations before discarding audio. Command mode, decoder settings, voice
 gates, model selection, and audio persistence are outside this change.
@@ -108,7 +108,7 @@ not establish visible insertion in the target app.
 ## Architecture implementation verification
 
 The user requested implementation of all four architecture-review candidates on
-September 10, 2026. Owner: LocalFlow maintainers. Base: `4f4526a`, with uncommitted
+September 10, 2026. Owner: Walkie maintainers. Base: `4f4526a`, with uncommitted
 changes. This refactor preserves recognition settings, retry limits, ordering,
 retention policies, login/update policy, and microphone implementation.
 
@@ -152,7 +152,7 @@ original-window rules. A regression test covers the half-frame alignment case.
 
 ## Review fixes, September 30, 2026
 
-Owner: LocalFlow maintainers. The user requested fixes for six reproduced
+Owner: Walkie maintainers. The user requested fixes for six reproduced
 review findings on base `a353f358d5c540c66575f7193dedd1176dec78d9`.
 
 Each released dictation starts its own 90-second processing deadline. It does

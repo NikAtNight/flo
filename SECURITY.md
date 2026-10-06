@@ -10,9 +10,9 @@ attacker could do with it.
 This is a personal project maintained in spare time. Expect an initial reply
 within about a week. There is no bounty program.
 
-## What LocalFlow can do, and why
+## What Walkie can do, and why
 
-LocalFlow needs unusually powerful permissions for a dictation app, so it is
+Walkie needs unusually powerful permissions for a dictation app, so it is
 worth being explicit about them:
 
 | Capability | Why it needs it | Entitlement / permission |
@@ -46,7 +46,7 @@ Nowhere. There is no account, no server, and no telemetry.
   can disable new recordings or delete the diagnostic archive independently
   of transcript history. Command mode is excluded.
 - **Personal voice collection** is a separate opt-in setting available only in
-  LocalFlow Local. It saves original-rate mono audio, raw and final transcripts,
+  Walkie Local. It saves original-rate mono audio, raw and final transcripts,
   reviewed text, and dictation metadata under
   `Application Support/LocalFlow Local/PersonalVoice/`, with 0700 directories
   and 0600 files. Clips have no expiry. New audio saves stop at 20 GB; metadata
@@ -75,7 +75,7 @@ Nowhere. There is no account, no server, and no telemetry.
   Diagnostics pane exports these typed records only when requested; it never
   uploads them. Audio and transcript recording archives remain separate.
 
-The only outbound network request LocalFlow makes on its own is the one-time
+The only outbound network request Walkie makes on its own is the one-time
 Whisper model download from Hugging Face.
 
 ## Verifying a download
@@ -88,7 +88,7 @@ Every released DMG is:
    workflow from a specific commit, rather than uploaded by hand:
 
 ```bash
-gh attestation verify LocalFlow-1.0.0.dmg --repo NikAtNight/localflow
+gh attestation verify Walkie-1.0.0.dmg --repo NikAtNight/walkie
 ```
 
 3. **Checksummed**. `SHA256SUMS.txt` is attached to each release:
@@ -100,9 +100,9 @@ shasum -a 256 -c SHA256SUMS.txt
 You can also confirm the signature and notarization locally:
 
 ```bash
-codesign --verify --deep --strict --verbose=2 /Applications/LocalFlow.app
-spctl --assess --type execute --verbose=4 /Applications/LocalFlow.app
-xcrun stapler validate /Applications/LocalFlow.app
+codesign --verify --deep --strict --verbose=2 /Applications/Walkie.app
+spctl --assess --type execute --verbose=4 /Applications/Walkie.app
+xcrun stapler validate /Applications/Walkie.app
 ```
 
 ## Supported versions

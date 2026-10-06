@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>LocalFlow</string>
+	<string>Walkie</string>
 	<key>CFBundleDisplayName</key>
-	<string>LocalFlow</string>
+	<string>Walkie</string>
 	<key>CFBundleIdentifier</key>
 	<string>app.talix.localflow</string>
 	<key>CFBundleVersion</key>
@@ -27,7 +27,7 @@
 	     SUPublicEDKey is the public half of the key the release workflow
 	     signs updates with, so a hijacked feed cannot install anything. -->
 	<key>SUFeedURL</key>
-	<string>https://github.com/NikAtNight/localflow/releases/latest/download/appcast.xml</string>
+	<string>https://github.com/NikAtNight/walkie/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>4/wQ6XehB3rZhDeckFB1O5atGbo7TkxxYcDsC175bos=</string>
 	<key>SUEnableAutomaticChecks</key>
@@ -35,6 +35,6 @@
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>LocalFlow records audio while you hold the dictation hotkey so it can transcribe your speech on-device.</string>
+	<string>Walkie records audio while you hold the dictation hotkey so it can transcribe your speech on-device.</string>
 </dict>
 </plist>
