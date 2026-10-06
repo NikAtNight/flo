@@ -79,8 +79,9 @@ jobs:
           path: |
             ~/.swiftpm
             .build
-          key: ${{ runner.os }}-release-swiftpm-${{ hashFiles('Package.resolved') }}
-          restore-keys: ${{ runner.os }}-release-swiftpm-
+          # Versioned like the CI cache key; bump both together.
+          key: ${{ runner.os }}-release-swiftpm-v2-${{ hashFiles('Package.resolved') }}
+          restore-keys: ${{ runner.os }}-release-swiftpm-v2-
 
       - name: Run tests
         run: |

@@ -21,9 +21,11 @@ jobs:
           path: |
             ~/.swiftpm
             .build
-          key: ${{ runner.os }}-swiftpm-${{ hashFiles('Package.resolved') }}
+          # Bump the version when a restored .build goes stale. v2: the 1.8.0
+          # rename moved the checkout path, and the old cache no longer built.
+          key: ${{ runner.os }}-swiftpm-v2-${{ hashFiles('Package.resolved') }}
           restore-keys: |
-            ${{ runner.os }}-swiftpm-
+            ${{ runner.os }}-swiftpm-v2-
 
       - name: Lint shell scripts
         run: |
