@@ -33,10 +33,6 @@ actor PersonalVoiceStore {
 enum DictationReplay {
     @MainActor static func run(arguments: [String]) async throws {}
 }
-enum HudTheme: String { case classic }
-enum ThemeIcon {
-    static func writePNG(_ theme: HudTheme, to path: String) -> Bool { false }
-}
 enum Settings {
     static let effectiveVocabulary = [String]()
     static let whisperModel = "stub-whisper"

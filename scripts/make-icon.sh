@@ -1,25 +1,35 @@
 #!/bin/bash
-# Renders the classic-theme app icon with the app's own ThemeIcon renderer
-# (the same drawing used when the theme changes) and packages it as
-# Resources/AppIcon.icns for the bundle.
+# Builds the app icon from Resources/AppIcon.icon.
+#
+# scripts/generate-icon.swift draws the package's artwork layers, then actool
+# compiles the package into Resources/Assets.car (light and dark renditions
+# for macOS 26 and later) and Resources/AppIcon.icns (the fallback for older
+# systems). Both outputs are committed so scripts/make-app.sh and CI runners
+# without a current Xcode only need to copy them. Needs Xcode 26 or later.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT
+ICON="Resources/AppIcon.icon"
+OUT=$(mktemp -d)
+trap 'rm -rf "$OUT"' EXIT
 
-echo "Rendering icon..."
-swift build --product LocalFlow >/dev/null
-"$(swift build --show-bin-path)/LocalFlow" --render-app-icon "$TMP/icon_1024.png" classic
+echo "Rendering icon layers..."
+swift scripts/generate-icon.swift "$ICON/Assets"
 
-ICONSET="$TMP/AppIcon.iconset"
-mkdir "$ICONSET"
-for size in 16 32 128 256 512; do
-    sips -z $size $size "$TMP/icon_1024.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
-    double=$((size * 2))
-    sips -z $double $double "$TMP/icon_1024.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
-done
+echo "Compiling icon package..."
+# The package name must match --app-icon, or actool emits nothing.
+xcrun actool "$ICON" --compile "$OUT" --app-icon AppIcon --platform macosx \
+    --minimum-deployment-target 14.0 \
+    --output-partial-info-plist "$OUT/partial.plist" \
+    --output-format human-readable-text >"$OUT/actool.log" 2>&1 \
+    || { cat "$OUT/actool.log" >&2; exit 1; }
+[[ -f "$OUT/Assets.car" && -f "$OUT/AppIcon.icns" ]] || {
+    echo "error: actool produced no icon" >&2
+    cat "$OUT/actool.log" >&2
+    exit 1
+}
 
-iconutil -c icns "$ICONSET" -o Resources/AppIcon.icns
-echo "Built Resources/AppIcon.icns"
+cp "$OUT/Assets.car" Resources/Assets.car
+cp "$OUT/AppIcon.icns" Resources/AppIcon.icns
+echo "Built Resources/Assets.car and Resources/AppIcon.icns"

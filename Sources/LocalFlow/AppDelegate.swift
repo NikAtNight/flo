@@ -377,9 +377,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeSystemTransitions()
         registerLoginItemOnce()
         updates.start()
-        // Bundle icon matches whichever listening theme is active; the
-        // bundled icon is the classic-theme default.
-        ThemeIcon.apply(HudTheme.current)
     }
 
     /// Compose typed live effects once for both settings-window and menu changes.
@@ -415,10 +412,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if enabled { self?.probeOllama() }
                     self?.startCommandHotkey()
                 },
-                applyTheme: { [weak self] theme in
+                applyTheme: { [weak self] _ in
                     guard let self else { return }
                     if !self.isRecording { self.overlay.preview() }
-                    ThemeIcon.apply(theme)
                 },
                 applySoundCues: { _ in },
                 refreshDecoderVocabulary: { [weak self] terms in

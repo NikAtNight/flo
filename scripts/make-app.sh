@@ -98,11 +98,13 @@ else
     echo "warning: Sparkle.framework not found; updates are disabled"
 fi
 
-# App icon - rendered on demand; re-run scripts/make-icon.sh to redesign.
-if [ ! -f Resources/AppIcon.icns ]; then
+# App icon: Assets.car carries the light and dark renditions (macOS 26+),
+# AppIcon.icns is the fallback. Both come from scripts/make-icon.sh.
+if [ ! -f Resources/AppIcon.icns ] || [ ! -f Resources/Assets.car ]; then
     ./scripts/make-icon.sh
 fi
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/Assets.car "$APP/Contents/Resources/Assets.car"
 
 # Sign with the stable self-signed identity so TCC grants (Microphone,
 # Accessibility) survive rebuilds. Fallback: ad-hoc with an explicit

@@ -56,15 +56,6 @@ struct LocalFlowMain {
             )
             return
         }
-        // --render-app-icon PATH [THEME]: write the 1024 px app icon as a PNG.
-        if let flagIndex = arguments.firstIndex(of: "--render-app-icon"), flagIndex + 1 < arguments.count {
-            let themeName = flagIndex + 2 < arguments.count ? arguments[flagIndex + 2] : HudTheme.classic.rawValue
-            guard let theme = HudTheme(rawValue: themeName) else {
-                FileHandle.standardError.write(Data("error: unknown theme \(themeName)\n".utf8))
-                exit(1)
-            }
-            exit(ThemeIcon.writePNG(theme, to: arguments[flagIndex + 1]) ? 0 : 1)
-        }
         if let flagIndex = arguments.firstIndex(of: "--record-test") {
             // Optional trailing arg: a device UID to record from (defaults
             // to the saved setting / system default).
