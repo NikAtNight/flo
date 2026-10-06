@@ -148,6 +148,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var statusItem: NSStatusItem!
+    private var statusIconPose: WalkieIcon.Pose?
+    private var statusIconFrame = 0
+    private var statusIconTimer: Timer?
     private var statusMenuItem: NSMenuItem!
     private var recentMenuItem: NSMenuItem!
     private var retryMenuItem: NSMenuItem!
@@ -585,7 +588,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.hotkeyActive = false
                 self.state = .failed(UserFacingIssue(
                     summary: "Dictation shortcut unavailable",
-                    details: "Remove and re-add LocalFlow in Accessibility settings. LocalFlow will keep retrying."
+                    details: "Remove and re-add Walkie in Accessibility settings. Walkie will keep retrying."
                 ))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     self.attemptHotkeyStart()
@@ -658,12 +661,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     state = .failed(UserFacingIssue(
                         summary: "Couldn't switch speech model",
                         details: "Couldn't load \(model): \(error.localizedDescription) "
-                            + "The previous model is still active, and LocalFlow will retry."
+                            + "The previous model is still active, and Walkie will retry."
                     ))
                 } else {
                     state = .failed(UserFacingIssue(
                         summary: "Couldn't load speech model",
-                        details: "\(error.localizedDescription) LocalFlow will retry."
+                        details: "\(error.localizedDescription) Walkie will retry."
                     ))
                 }
                 scheduleModelRetry(generation: generation)
@@ -766,7 +769,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             playCue("Basso")
             state = .failed(UserFacingIssue(
                 summary: "Microphone access needed",
-                details: "Enable LocalFlow in System Settings > Privacy & Security > Microphone."
+                details: "Enable Walkie in System Settings > Privacy & Security > Microphone."
             ))
             scheduleFailureRecovery()
             return
@@ -1209,7 +1212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         playCue("Basso")
         state = .failed(UserFacingIssue(
             summary: "Voice command timed out",
-            details: "The voice edit was cancelled. Try again. If speech recognition stopped responding, switch speech models or restart LocalFlow."
+            details: "The voice edit was cancelled. Try again. If speech recognition stopped responding, switch speech models or restart Walkie."
         ))
         scheduleFailureRecovery()
     }
@@ -1320,7 +1323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         fixItem.target = self
-        fixItem.toolTip = "Copy your corrected text, then pick this to teach LocalFlow the fix"
+        fixItem.toolTip = "Copy your corrected text, then pick this to teach Walkie the fix"
         menu.addItem(fixItem)
 
         let historyItem = NSMenuItem(
@@ -1398,8 +1401,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshStatusUI()
     }
 
+    /// Shows the walkie-talkie in `pose`, animating the talking and thinking
+    /// poses. nil stops the animation so an SF Symbol can take over.
+    private func setStatusIcon(_ pose: WalkieIcon.Pose?) {
+        guard pose != statusIconPose else { return }
+        statusIconPose = pose
+        statusIconFrame = 0
+        statusIconTimer?.invalidate()
+        statusIconTimer = nil
+        guard let pose else { return }
+        drawStatusIcon()
+        guard pose != .idle else { return }
+        let timer = Timer(timeInterval: 0.22, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.statusIconFrame += 1
+                self.drawStatusIcon()
+            }
+        }
+        // Common modes keep it animating while the menu is open.
+        RunLoop.main.add(timer, forMode: .common)
+        statusIconTimer = timer
+    }
+
+    private func drawStatusIcon() {
+        guard let statusIconPose else { return }
+        statusItem.button?.image = WalkieIcon.image(
+            statusIconPose,
+            frame: statusIconFrame,
+            accessibilityDescription: AppIdentity.current.name
+        )
+    }
+
     private func refreshStatusUI() {
-        let symbol: String
+        // nil symbol means the walkie-talkie icon in `pose`.
+        var symbol: String?
+        var pose = WalkieIcon.Pose.idle
         let statusText: String
         statusMenuItem?.toolTip = nil
         statusMenuItem?.isEnabled = false
@@ -1415,17 +1452,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusText = status.title
             statusMenuItem?.toolTip = status.details
         case .idle:
-            symbol = "waveform"
             var text = "Ready"
             if let ms = lastLatencyMs { text += " · \(ms)ms" }
             statusText = text
             statusMenuItem?.toolTip = "Hold \(hotkey.key.label) to dictate"
         case .recording:
-            symbol = "record.circle.fill"
+            pose = .talking
             statusText = "Recording…"
             statusMenuItem?.toolTip = "Release \(hotkey.key.label) to transcribe"
         case .processing:
-            symbol = "hourglass"
+            pose = .thinking
             statusText = "Transcribing…"
         case .failed(let issue):
             symbol = "exclamationmark.triangle"
@@ -1433,7 +1469,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusMenuItem?.toolTip = issue.details
             statusMenuItem?.isEnabled = true
         }
-        statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: AppIdentity.current.name)
+        if let symbol {
+            setStatusIcon(nil)
+            statusItem.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: AppIdentity.current.name)
+        } else {
+            setStatusIcon(pose)
+        }
         statusItem.button?.toolTip = AppIdentity.current.name
         statusMenuItem?.title = statusText
         if let lastError {
