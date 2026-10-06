@@ -1,8 +1,9 @@
 import AppKit
 import Darwin
 
-/// Regenerates the app icon for the selected listening theme. Theme glyphs sit
-/// on a dark rounded plate. Liquid Glass uses a fixed frame of its HUD renderer.
+/// Regenerates the app icon for the selected listening theme: the walkie-talkie
+/// on the theme's plate, with the theme's glyph on its screen. Liquid Glass
+/// uses a fixed frame of its HUD renderer.
 ///
 /// The running process gets the new image immediately, while Finder and
 /// Launchpad read the bundle's AppIcon.icns. Rewriting it breaks the code seal,
@@ -327,9 +328,42 @@ enum ThemeIcon {
         }
     }
 
-    /// Each theme's icon is the bespoke mark designed on the concept board:
-    /// the same glyph the HTML artboard drew, ported 1:1. The plate, radial
-    /// light, and hairline edge are shared; the glyph is each theme's own.
+    /// Radio-wave gradient per theme, taken from each glyph's own palette.
+    private static func waveColors(_ theme: HudTheme) -> (HudColor, HudColor) {
+        switch theme {
+        case .classic: return (HudColor("#40DED1"), HudColor("#C285F2"))
+        case .typeset: return (HudColor("#FFD68C"), HudColor("#FFC46B"))
+        case .aurora: return (HudColor("#3AF0A0"), HudColor("#D96BFF"))
+        case .bolide: return (HudColor("#FFC46B"), HudColor("#FF8FB8"))
+        case .mercury: return (HudColor("#FF8FB8"), HudColor("#C77BFF"))
+        case .liquidGlass: return (HudColor("#EDE7DA"), HudColor("#9ADCE8"))
+        case .ticker: return (HudColor("#FF4D3D"), HudColor("#FF8A7A"))
+        case .constellation: return (HudColor("#FFE9B8"), HudColor("#FFF4D6"))
+        case .loom: return (HudColor("#E8DFC8"), HudColor("#E8BC66"))
+        case .vapor: return (HudColor("#45E8D0"), HudColor("#9ADCE8"))
+        case .sonar: return (HudColor("#45E8D0"), HudColor("#DCFFF6"))
+        case .shorthand: return (HudColor("#6BE8F0"), HudColor("#DCFAFC"))
+        case .prism: return (HudColor("#FF6B6B"), HudColor("#B57BFF"))
+        case .murmuration: return (HudColor("#FFB98A"), HudColor("#6BB8FF"))
+        case .filament: return (HudColor("#6BB8FF"), HudColor("#E8A25E"))
+        case .bloom: return (HudColor("#7ADB8F"), HudColor("#FFD37A"))
+        case .pianola: return (HudColor("#E8BC66"), HudColor("#F2E8CF"))
+        }
+    }
+
+    /// Writes the 1024 px icon for `theme` as a PNG. scripts/make-icon.sh
+    /// uses it (through `--render-app-icon`) to build Resources/AppIcon.icns.
+    static func writePNG(_ theme: HudTheme, to path: String) -> Bool {
+        guard let image = compose(theme),
+              let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL, "public.png" as CFString, 1, nil)
+        else { return false }
+        CGImageDestinationAddImage(dest, image, nil)
+        return CGImageDestinationFinalize(dest)
+    }
+
+    /// Every theme's icon is the Walkie walkie-talkie on that theme's plate.
+    /// Its screen shows the theme's own glyph (the bespoke mark from the
+    /// concept board, ported 1:1) and its radio waves use the theme's colors.
     private static func compose(_ theme: HudTheme, canvas S: CGFloat = 1024) -> CGImage? {
         guard let ctx = CGContext(
             data: nil, width: Int(S), height: Int(S),
@@ -359,7 +393,7 @@ enum ThemeIcon {
         // The artboard glyphs were drawn y-down; flip once and port verbatim.
         ctx.translateBy(x: 0, y: S)
         ctx.scaleBy(x: 1, y: -1)
-        drawGlyph(theme, ctx, S)
+        drawWalkie(theme, ctx, S)
         ctx.restoreGState()
 
         // Hairline inner edge to lift the plate off light backgrounds.
@@ -370,6 +404,93 @@ enum ThemeIcon {
         ctx.strokePath()
 
         return ctx.makeImage()
+    }
+
+    // MARK: Walkie-talkie (y-down, like the glyphs)
+
+    private static func drawWalkie(_ theme: HudTheme, _ ctx: CGContext, _ S: CGFloat) {
+        // Same layout as the menubar icon: antenna top left, push-to-talk
+        // button on the left edge, waves leaving the right side. Drawn at
+        // 90% about the center so it clears the plate edges.
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        ctx.translateBy(x: S / 2, y: S / 2 + S * 0.01)
+        ctx.scaleBy(x: 0.9, y: 0.9)
+        ctx.translateBy(x: -S / 2, y: -S / 2)
+        let dx = -0.035 * S
+        func r(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
+            CGRect(x: x * S + dx, y: y * S, width: w * S, height: h * S)
+        }
+        let body = r(0.27, 0.30, 0.34, 0.56)
+        let bodyPath = CGPath(roundedRect: body, cornerWidth: S * 0.075, cornerHeight: S * 0.075, transform: nil)
+        let antenna = roundedRect(0.33 * S + dx, 0.12 * S, 0.056 * S, 0.22 * S, 0.028 * S)
+        let button = roundedRect(0.235 * S + dx, 0.43 * S, 0.06 * S, 0.13 * S, 0.016 * S)
+        let screen = r(0.31, 0.36, 0.26, 0.20)
+        let screenPath = CGPath(roundedRect: screen, cornerWidth: S * 0.032, cornerHeight: S * 0.032, transform: nil)
+        let (_, plateBottom) = backdrop(theme)
+
+        // Radio waves first, so their glow sits behind the body.
+        let (inner, outer) = waveColors(theme)
+        let center = CGPoint(x: body.maxX + S * 0.01, y: S * 0.40)
+        for (radius, alpha) in [(0.12, 1.0), (0.21, 0.8)] as [(CGFloat, CGFloat)] {
+            let arc = CGMutablePath()
+            arc.addArc(center: center, radius: radius * S, startAngle: -.pi / 4, endAngle: .pi / 4, clockwise: false)
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: S * 0.04, color: inner.cg(0.55 * alpha))
+            ctx.addPath(arc)
+            ctx.setLineWidth(S * 0.046)
+            ctx.setLineCap(.round)
+            ctx.setStrokeColor(inner.cg(alpha))
+            ctx.strokePath()
+            ctx.restoreGState()
+            strokeGradient(ctx, arc, width: S * 0.046,
+                           from: CGPoint(x: center.x, y: center.y - radius * S),
+                           to: CGPoint(x: center.x, y: center.y + radius * S),
+                           stops: [(0, inner.cg(alpha)), (1, outer.cg(alpha))])
+        }
+
+        // Cream shell with a soft drop shadow.
+        let shell = CGMutablePath()
+        shell.addPath(bodyPath)
+        shell.addPath(antenna)
+        shell.addPath(button)
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: S * 0.018), blur: S * 0.05, color: CGColor(gray: 0, alpha: 0.5))
+        ctx.addPath(shell)
+        ctx.setFillColor(HudColor("#E9E3D8").cg(1))
+        ctx.fillPath()
+        ctx.restoreGState()
+        hudLinearGradient(ctx, from: CGPoint(x: 0, y: S * 0.12), to: CGPoint(x: 0, y: body.maxY), stops: [
+            (0, HudColor("#FBF8F2").cg(1)), (1, HudColor("#D6CEC0").cg(1)),
+        ], clippedTo: shell)
+
+        // Screen: the theme's glyph, scaled into a dark inset panel.
+        ctx.saveGState()
+        ctx.addPath(screenPath)
+        ctx.clip()
+        ctx.setFillColor(plateBottom.cg(1))
+        ctx.fill(screen)
+        let glyphScale = screen.width / (S * 0.78)
+        ctx.translateBy(x: screen.midX, y: screen.midY)
+        ctx.scaleBy(x: glyphScale, y: glyphScale)
+        ctx.translateBy(x: -S / 2, y: -S / 2)
+        drawGlyph(theme, ctx, S)
+        ctx.restoreGState()
+        // Glass sheen and a recessed edge.
+        hudLinearGradient(ctx, from: CGPoint(x: 0, y: screen.minY), to: CGPoint(x: 0, y: screen.midY), stops: [
+            (0, CGColor(gray: 1, alpha: 0.10)), (1, CGColor(gray: 1, alpha: 0)),
+        ], clippedTo: screenPath)
+        ctx.addPath(screenPath)
+        ctx.setStrokeColor(CGColor(gray: 0, alpha: 0.35))
+        ctx.setLineWidth(S * 0.008)
+        ctx.strokePath()
+
+        // Speaker grille.
+        ctx.setFillColor(HudColor("#7D7466").cg(0.55))
+        for y in [0.635, 0.695, 0.755] as [CGFloat] {
+            ctx.addPath(roundedRect(0.335 * S + dx, y * S, 0.21 * S, 0.026 * S, 0.013 * S))
+            ctx.fillPath()
+        }
     }
 
     // MARK: Per-theme glyphs (ports of the concept-board icons)

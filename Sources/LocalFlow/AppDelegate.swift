@@ -378,7 +378,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerLoginItemOnce()
         updates.start()
         // Bundle icon matches whichever listening theme is active; the
-        // make-app icon is only the classic-wave default.
+        // bundled icon is the classic-theme default.
         ThemeIcon.apply(HudTheme.current)
     }
 

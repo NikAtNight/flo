@@ -1,5 +1,6 @@
 #!/bin/bash
-# Renders the app icon (scripts/generate-icon.swift) and packages it as
+# Renders the classic-theme app icon with the app's own ThemeIcon renderer
+# (the same drawing used when the theme changes) and packages it as
 # Resources/AppIcon.icns for the bundle.
 set -euo pipefail
 
@@ -9,7 +10,8 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
 echo "Rendering icon..."
-swift scripts/generate-icon.swift "$TMP/icon_1024.png"
+swift build --product LocalFlow >/dev/null
+"$(swift build --show-bin-path)/LocalFlow" --render-app-icon "$TMP/icon_1024.png" classic
 
 ICONSET="$TMP/AppIcon.iconset"
 mkdir "$ICONSET"
