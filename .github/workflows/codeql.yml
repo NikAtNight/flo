@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze Swift
@@ -25,14 +29,46 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Cache SwiftPM
-        uses: actions/cache@v6
+      - name: Identify Swift toolchain
+        id: toolchain
+        shell: bash
+        run: |
+          sw_vers -productVersion > "$RUNNER_TEMP/codeql-toolchain.txt"
+          xcodebuild -version >> "$RUNNER_TEMP/codeql-toolchain.txt"
+          swift --version >> "$RUNNER_TEMP/codeql-toolchain.txt"
+          fingerprint=$(shasum -a 256 "$RUNNER_TEMP/codeql-toolchain.txt" | cut -d ' ' -f 1)
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+
+      - name: Restore SwiftPM dependencies
+        id: dependencies
+        uses: actions/cache/restore@v6
         with:
           path: |
-            ~/.swiftpm
+            ~/Library/Caches/org.swift.swiftpm
             .build
-          key: ${{ runner.os }}-codeql-swiftpm-${{ hashFiles('Package.resolved') }}
-          restore-keys: ${{ runner.os }}-codeql-swiftpm-
+          # This namespace contains dependency builds only. Never restore the
+          # old full-app cache, which could hide unchanged files from CodeQL.
+          key: ${{ runner.os }}-${{ runner.arch }}-codeql-deps-v1-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-codeql-deps-v1-${{ steps.toolchain.outputs.fingerprint }}-
+
+      - name: Resolve SwiftPM dependencies
+        run: swift package resolve
+
+      - name: Build SwiftPM dependencies
+        run: |
+          swift build --target WhisperKit
+          swift build --target FluidAudio
+
+      # Save before the app builds so even an unchanged app is compiled under
+      # CodeQL on the next run. Sparkle is a resolved binary dependency.
+      - name: Save SwiftPM dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            .build
+          key: ${{ steps.dependencies.outputs.cache-primary-key }}
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4

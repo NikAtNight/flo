@@ -88,3 +88,31 @@ python3 -B Tests/StartupReadinessTests.py   # no mic or model download needed
 ```
 
 CI runs all of these except the startup readiness check.
+
+## CodeQL scans
+
+[The CodeQL workflow](../.github/workflows/codeql.yml) scans main pushes,
+pull requests targeting main, and the weekly schedule. A newer run cancels
+an older run for the same Git ref, so separate PRs do not cancel each other.
+
+SwiftPM resolves packages and builds the WhisperKit and FluidAudio dependency
+targets before CodeQL tracing starts. Sparkle arrives as a binary dependency.
+The workflow saves the dependency cache at this point, before compiling
+LocalFlow. This lets a restored cache reuse dependencies while all app sources
+still compile between CodeQL initialization and analysis, even on an unchanged
+rerun. Keep the dependency target list in sync with `Package.swift`.
+
+Cache keys include the OS, architecture, macOS version, Xcode and Swift versions,
+and the package manifest and lockfile. A dependency update may restore an older cache for
+the same toolchain; SwiftPM then resolves and rebuilds what changed. Toolchain
+changes start a fresh cache. The separate `codeql-deps-v1` namespace excludes
+older caches containing compiled app code. Do not move the save step after the
+app build or replace it with an action that saves at job completion.
+
+With `actionlint` installed, validate workflow edits with
+`actionlint .github/workflows/codeql.yml`.
+Local SwiftPM checks can verify that the dependency cache excludes app objects,
+but runtime savings and extracted-file coverage need a GitHub CodeQL run.
+Compare a cold run and an unchanged warm run, including their dependency-build,
+app-build, and analysis timings. The workflow maintainer owns that check when
+these changes reach GitHub.
