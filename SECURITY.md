@@ -88,7 +88,7 @@ Every released DMG is:
    workflow from a specific commit, rather than uploaded by hand:
 
 ```bash
-gh attestation verify Flo-1.0.0.dmg --repo NikAtNight/walkie
+gh attestation verify Flo-1.0.0.dmg --repo NikAtNight/flo
 ```
 
 3. **Checksummed**. `SHA256SUMS.txt` is attached to each release:
