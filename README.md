@@ -1,4 +1,17 @@
-# Flo
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/flo-icon-dark.png">
+    <img src="docs/images/flo-icon-light.png" alt="Flo app icon" width="128" height="128">
+  </picture>
+</p>
+
+<h1 align="center">Flo</h1>
+
+<p align="center">
+  <a href="https://flo.talix.app">flo.talix.app</a> ·
+  <a href="https://github.com/NikAtNight/flo/releases/latest">Download</a> ·
+  <a href="SECURITY.md">Security</a>
+</p>
 
 Push-to-talk dictation for Apple Silicon Macs that runs entirely on your
 machine. Hold a key, speak, let go, and the text is pasted into whatever app
@@ -29,13 +42,16 @@ On first launch, grant two permissions:
 The first launch downloads the model and lets Core ML prepare it, which can
 take a few minutes. The menubar shows Ready when it's done.
 
-Flo lives in the menubar and starts at login. It updates itself through
+Flo lives in the menubar and starts at login. Its icon is a row of dots:
+a still wave when it's ready, a moving wave while you talk, and dots filling
+in while it transcribes. It updates itself through
 [Sparkle](https://sparkle-project.org) once a day (you can turn that off in
 Settings). To uninstall, quit it, delete the app, and delete
 `~/Library/Application Support/LocalFlow/`.
 
-Flo was previously called Walkie, and LocalFlow before 1.8.0. Existing
-installs update in place and keep their settings, permissions, and data.
+Flo was called LocalFlow before 1.8.0 and Walkie in 1.8.0. It became Flo in
+1.10.0. Existing installs update in place and keep their settings,
+permissions, and data.
 The data folder and log file still use the LocalFlow name. Sparkle updates
 can keep the old `/Applications/Walkie.app` or `/Applications/LocalFlow.app`
 path until you reinstall from the DMG.
