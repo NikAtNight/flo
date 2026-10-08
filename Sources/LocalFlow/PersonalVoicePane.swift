@@ -46,7 +46,7 @@ struct PersonalVoicePane: View {
             } header: {
                 Text("Personal voice archive")
             } footer: {
-                Text("Walkie Local only. Keeps one original recording per dictation until you delete it. New audio saves pause at 20 GB; you can still edit transcripts. Turning this off stops new saves and keeps existing clips. Diagnostic recordings retain their separate 7-day, 1 GB limit.")
+                Text("Flo Local only. Keeps one original recording per dictation until you delete it. New audio saves pause at 20 GB; you can still edit transcripts. Turning this off stops new saves and keeps existing clips. Diagnostic recordings retain their separate 7-day, 1 GB limit.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

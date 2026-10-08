@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>Walkie</string>
+	<string>Flo</string>
 	<key>CFBundleDisplayName</key>
-	<string>Walkie</string>
+	<string>Flo</string>
 	<key>CFBundleIdentifier</key>
 	<string>app.talix.localflow</string>
 	<key>CFBundleVersion</key>
@@ -37,6 +37,6 @@
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Walkie records audio while you hold the dictation hotkey so it can transcribe your speech on-device.</string>
+	<string>Flo records audio while you hold the dictation hotkey so it can transcribe your speech on-device.</string>
 </dict>
 </plist>

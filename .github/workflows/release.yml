@@ -144,7 +144,7 @@ jobs:
       - name: Verify the on-device cleanup model is linked
         run: |
           set -euo pipefail
-          if ! otool -L build/Walkie.app/Contents/MacOS/LocalFlow | grep -q FoundationModels; then
+          if ! otool -L build/Flo.app/Contents/MacOS/LocalFlow | grep -q FoundationModels; then
             echo "error: FoundationModels is not linked; command mode and cleanup would be missing" >&2
             exit 1
           fi
@@ -157,13 +157,13 @@ jobs:
         run: |
           set -euo pipefail
           ditto -c -k --sequesterRsrc --keepParent \
-            build/Walkie.app "$RUNNER_TEMP/Walkie.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/Walkie.zip" \
+            build/Flo.app "$RUNNER_TEMP/Flo.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/Flo.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
             --wait --timeout 30m
-          xcrun stapler staple build/Walkie.app
+          xcrun stapler staple build/Flo.app
 
       - name: Package DMG
         env:
@@ -176,7 +176,7 @@ jobs:
           SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
         run: |
           set -euo pipefail
-          DMG="dist/Walkie-${APP_VERSION}.dmg"
+          DMG="dist/Flo-${APP_VERSION}.dmg"
           codesign --force --sign "$SIGN_IDENTITY" --timestamp \
             --identifier app.talix.localflow.dmg "$DMG"
 
@@ -188,7 +188,7 @@ jobs:
           APP_VERSION: ${{ steps.contract.outputs.version }}
         run: |
           set -euo pipefail
-          DMG="dist/Walkie-${APP_VERSION}.dmg"
+          DMG="dist/Flo-${APP_VERSION}.dmg"
           xcrun notarytool submit "$DMG" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
@@ -201,13 +201,13 @@ jobs:
           APP_VERSION: ${{ steps.contract.outputs.version }}
         run: |
           set -euo pipefail
-          DMG="dist/Walkie-${APP_VERSION}.dmg"
-          codesign --verify --deep --strict --verbose=2 build/Walkie.app
+          DMG="dist/Flo-${APP_VERSION}.dmg"
+          codesign --verify --deep --strict --verbose=2 build/Flo.app
           codesign --verify --strict --verbose=2 "$DMG"
-          spctl --assess --type execute --verbose=4 build/Walkie.app
+          spctl --assess --type execute --verbose=4 build/Flo.app
           spctl --assess --type open --context context:primary-signature \
             --verbose=4 "$DMG"
-          xcrun stapler validate build/Walkie.app
+          xcrun stapler validate build/Flo.app
           xcrun stapler validate "$DMG"
 
       - name: Build Sparkle appcast
@@ -220,14 +220,14 @@ jobs:
           set -euo pipefail
           mkdir -p sparkle-updates
           ditto -c -k --sequesterRsrc --keepParent \
-            build/Walkie.app "sparkle-updates/Walkie-${APP_VERSION}.zip"
+            build/Flo.app "sparkle-updates/Flo-${APP_VERSION}.zip"
 
           if [[ -f CHANGELOG.md ]]; then
             awk -v version="$APP_VERSION" '
               $0 ~ "^## \\[" version "\\]" { found=1; next }
               found && /^## / { exit }
               found { print }
-            ' CHANGELOG.md > "sparkle-updates/Walkie-${APP_VERSION}.html"
+            ' CHANGELOG.md > "sparkle-updates/Flo-${APP_VERSION}.html"
           fi
 
           "$APPCAST_TOOL" \
@@ -237,7 +237,7 @@ jobs:
             sparkle-updates <<< "$SPARKLE_PRIVATE_KEY"
 
           cp sparkle-updates/appcast.xml dist/appcast.xml
-          cp "sparkle-updates/Walkie-${APP_VERSION}.zip" dist/
+          cp "sparkle-updates/Flo-${APP_VERSION}.zip" dist/
 
       - name: Build checksums
         env:
@@ -247,7 +247,7 @@ jobs:
           cp scripts/setup-s1-mini.sh dist/setup-s1-mini.sh
           chmod 755 dist/setup-s1-mini.sh
           cd dist
-          FILES=("Walkie-${APP_VERSION}.dmg" "Walkie-${APP_VERSION}.zip" setup-s1-mini.sh)
+          FILES=("Flo-${APP_VERSION}.dmg" "Flo-${APP_VERSION}.zip" setup-s1-mini.sh)
           shasum -a 256 "${FILES[@]}" > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
@@ -255,19 +255,19 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.contract.outputs.tag }}
           APP_VERSION: ${{ steps.contract.outputs.version }}
-          APP_BUNDLE_PATH: build/Walkie.app
+          APP_BUNDLE_PATH: build/Flo.app
           VERIFY_CHECKSUMS: "true"
         run: ./scripts/validate-release.sh artifacts
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v4
         with:
-          subject-path: dist/Walkie-${{ steps.contract.outputs.version }}.dmg
+          subject-path: dist/Flo-${{ steps.contract.outputs.version }}.dmg
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: Walkie-${{ steps.contract.outputs.version }}
+          name: Flo-${{ steps.contract.outputs.version }}
           path: |
             dist/*.dmg
             dist/*.zip
@@ -296,7 +296,7 @@ jobs:
             ' CHANGELOG.md > "$NOTES_FILE"
           fi
           if [[ ! -s "$NOTES_FILE" ]]; then
-            printf 'Walkie %s\n' "$APP_VERSION" > "$NOTES_FILE"
+            printf 'Flo %s\n' "$APP_VERSION" > "$NOTES_FILE"
           fi
 
           EXISTING="$(gh api --paginate "repos/${{ github.repository }}/releases" \
@@ -325,8 +325,8 @@ jobs:
           fi
 
           ASSETS=(
-            "dist/Walkie-${APP_VERSION}.dmg"
-            "dist/Walkie-${APP_VERSION}.zip"
+            "dist/Flo-${APP_VERSION}.dmg"
+            "dist/Flo-${APP_VERSION}.zip"
             "dist/appcast.xml"
             "dist/SHA256SUMS.txt"
             "dist/setup-s1-mini.sh"
@@ -356,7 +356,7 @@ jobs:
 
           verify_release_tag_target
 
-          EXPECTED=$'Walkie-${{ steps.contract.outputs.version }}.dmg\nWalkie-${{ steps.contract.outputs.version }}.zip\nSHA256SUMS.txt\nappcast.xml\nsetup-s1-mini.sh'
+          EXPECTED=$'Flo-${{ steps.contract.outputs.version }}.dmg\nFlo-${{ steps.contract.outputs.version }}.zip\nSHA256SUMS.txt\nappcast.xml\nsetup-s1-mini.sh'
           EXPECTED="$(printf '%s\n' "$EXPECTED" | LC_ALL=C sort)"
           ACTUAL="$(gh release view "$RELEASE_TAG" --json assets \
             --jq '.assets[].name' | LC_ALL=C sort)"

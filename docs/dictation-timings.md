@@ -2,7 +2,7 @@
 
 Use a release build from the current checkout. `swift build -c release` builds
 the binary; `scripts/make-app.sh` packages it and stamps the Git revision and
-dirty-tree status before signing. The script replaces `build/LocalFlow.app`.
+dirty-tree status before signing. The script replaces `build/Flo.app`.
 Use the app bundle for microphone/hotkey testing so permissions belong to
 LocalFlow. Building does not update the running `/Applications` copy.
 
@@ -114,7 +114,7 @@ existing WhisperKit audio loader can be used. Replay rejects audio longer than
 300 seconds and gates insufficient voiced audio using the app's current rules.
 
 ```bash
-APP=build/LocalFlow.app/Contents/MacOS/LocalFlow
+APP=build/Flo.app/Contents/MacOS/LocalFlow
 "$APP" --replay /path/to/test.wav --runs 5 --no-cleanup > /tmp/raw-output.txt 2> /tmp/raw-timing.log
 "$APP" --replay /path/to/test.wav --runs 5 --cleanup > /tmp/clean-output.txt 2> /tmp/clean-timing.log
 ```

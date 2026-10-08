@@ -1,6 +1,6 @@
 #!/bin/bash
 # Registers Superwhisper's s1-mini transcript normalizer (0.6B, Apache 2.0)
-# with the local Ollama server under the name "s1-mini", which is LocalFlow's
+# with the local Ollama server under the name "s1-mini", which is Flo's
 # default cleanup model. Uses the Modelfile from the official model card: the
 # model was trained with thinking off and greedy decoding, so the template
 # bakes in an empty <think> block and temperature 0. A plain
@@ -49,5 +49,5 @@ EOF
 (cd "$workdir" && ollama create s1-mini -f Modelfile)
 
 echo
-echo "Done. With 'Clean up' enabled in LocalFlow's settings (and Apple"
+echo "Done. With 'Clean up' enabled in Flo's settings (and Apple"
 echo "Intelligence unavailable), dictations now run through s1-mini."

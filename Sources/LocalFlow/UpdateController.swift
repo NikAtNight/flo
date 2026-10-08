@@ -131,7 +131,7 @@ final class UpdateController: NSObject {
             DiagLog.log("manual update check unavailable (sessionInProgress=1)")
             let alert = NSAlert()
             alert.messageText = "An update check is already in progress"
-            alert.informativeText = "Walkie's updater is busy. Try again in a moment."
+            alert.informativeText = "Flo's updater is busy. Try again in a moment."
             alert.addButton(withTitle: "OK")
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
@@ -139,7 +139,7 @@ final class UpdateController: NSObject {
             DiagLog.log("manual update check unavailable (sessionInProgress=0)")
             let alert = NSAlert()
             alert.messageText = "Unable to check for updates"
-            alert.informativeText = "Walkie's updater is not ready. Restart the app and try again."
+            alert.informativeText = "Flo's updater is not ready. Restart the app and try again."
             alert.addButton(withTitle: "OK")
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
