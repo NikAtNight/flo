@@ -691,7 +691,7 @@ write_appcast() {
         '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">' \
         '  <channel>' \
         '    <item>' \
-        "      <enclosure url=\"https://github.com/NikAtNight/walkie/releases/download/v1.2.3/$archive_name\" sparkle:edSignature=\"$signature\" />" \
+        "      <enclosure url=\"https://github.com/NikAtNight/flo/releases/download/v1.2.3/$archive_name\" sparkle:edSignature=\"$signature\" />" \
         '    </item>' \
         '  </channel>' \
         '</rss>' > "$DIST_DIR/appcast.xml"

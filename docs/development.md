@@ -55,8 +55,10 @@ Owner: Flo maintainers. The October 8, 2026 request renames the application
 from Walkie to Flo. It follows the LocalFlow-to-Walkie rename in `ad726e1`.
 The visible names are Flo and Flo Local. App bundles, DMG/ZIP filenames,
 release metadata, settings help, error messages, and diagnostic export labels
-use those names. The GitHub repository and update feed still use
-`NikAtNight/walkie`. Icons and dictation behavior are outside this change.
+use those names. The GitHub repository moved to `NikAtNight/flo`, and the
+update feed follows it. GitHub redirects the `walkie` and `localflow` feed
+URLs baked into older builds. The app icon and menu bar icon became a dot
+wave in the same release. Dictation behavior is unchanged.
 
 `AppIdentity` separates display names from bundle IDs and storage paths.
 The executable remains `LocalFlow`, bundle IDs remain `app.talix.localflow`

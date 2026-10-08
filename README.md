@@ -43,7 +43,7 @@ path until you reinstall from the DMG.
 To check a download came from this repo's release workflow:
 
 ```bash
-gh attestation verify Flo-<version>.dmg --repo NikAtNight/walkie
+gh attestation verify Flo-<version>.dmg --repo NikAtNight/flo
 shasum -a 256 -c SHA256SUMS.txt   # attached to each release
 ```
 
