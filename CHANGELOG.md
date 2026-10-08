@@ -9,10 +9,7 @@
 * rename Walkie to Flo ([ccc784c](https://github.com/NikAtNight/flo/commit/ccc784c7ee283adcf0ea5ddb41e8a4539d228c48))
 
 
-### Chores
-
-* release 1.10.0 ([36368ff](https://github.com/NikAtNight/flo/commit/36368ffb4bffef5ee96c33668e93619ce81048ef))
-* release 1.9.1 ([bcd05cf](https://github.com/NikAtNight/flo/commit/bcd05cf5f0c2695d4608889890a3772ecf252751))
+This release also includes the Sparkle 2.10.0 update and the app icon work from the unpublished 1.9.0 release.
 
 ## [1.9.0](https://github.com/NikAtNight/walkie/compare/v1.8.0...v1.9.0) (2026-10-06)
 
