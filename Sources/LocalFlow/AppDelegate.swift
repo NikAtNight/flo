@@ -148,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private var statusItem: NSStatusItem!
-    private var statusIconPose: WalkieIcon.Pose?
+    private var statusIconPose: WaveIcon.Pose?
     private var statusIconFrame = 0
     private var statusIconTimer: Timer?
     private var statusMenuItem: NSMenuItem!
@@ -1397,9 +1397,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshStatusUI()
     }
 
-    /// Shows the walkie-talkie in `pose`, animating the talking and thinking
+    /// Shows the dot wave in `pose`, animating the talking and thinking
     /// poses. nil stops the animation so an SF Symbol can take over.
-    private func setStatusIcon(_ pose: WalkieIcon.Pose?) {
+    private func setStatusIcon(_ pose: WaveIcon.Pose?) {
         guard pose != statusIconPose else { return }
         statusIconPose = pose
         statusIconFrame = 0
@@ -1408,7 +1408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let pose else { return }
         drawStatusIcon()
         guard pose != .idle else { return }
-        let timer = Timer(timeInterval: 0.22, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: WaveIcon.frameInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.statusIconFrame += 1
@@ -1422,7 +1422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func drawStatusIcon() {
         guard let statusIconPose else { return }
-        statusItem.button?.image = WalkieIcon.image(
+        statusItem.button?.image = WaveIcon.image(
             statusIconPose,
             frame: statusIconFrame,
             accessibilityDescription: AppIdentity.current.name
@@ -1430,9 +1430,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refreshStatusUI() {
-        // nil symbol means the walkie-talkie icon in `pose`.
+        // nil symbol means the dot wave icon in `pose`.
         var symbol: String?
-        var pose = WalkieIcon.Pose.idle
+        var pose = WaveIcon.Pose.idle
         let statusText: String
         statusMenuItem?.toolTip = nil
         statusMenuItem?.isEnabled = false

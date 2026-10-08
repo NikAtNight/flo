@@ -1,18 +1,27 @@
 {
   "fill-specializations": [
     { "value": { "solid": "display-p3:0.969,0.941,0.902,1.000" } },
-    { "appearance": "dark", "value": { "solid": "display-p3:0.102,0.071,0.125,1.000" } }
+    { "appearance": "dark", "value": { "solid": "display-p3:0.165,0.110,0.188,1.000" } }
   ],
   "groups": [
     {
-      "name": "Button",
+      "name": "Dots",
       "lighting": "individual",
       "specular": false,
       "blur-material": null,
       "translucency": { "enabled": false, "value": 0.5 },
-      "shadow": { "kind": "neutral", "opacity": 0.5 },
+      "shadow": { "kind": "none", "opacity": 0.5 },
       "layers": [
-        { "name": "button", "image-name": "button.png", "glass": false }
+        { "name": "wave", "image-name": "wave.png", "glass": false },
+        {
+          "name": "grid",
+          "image-name": "grid.png",
+          "glass": false,
+          "fill-specializations": [
+            { "value": { "solid": "display-p3:0.122,0.078,0.141,0.080" } },
+            { "appearance": "dark", "value": { "solid": "display-p3:1.000,1.000,1.000,0.070" } }
+          ]
+        }
       ]
     },
     {
@@ -37,7 +46,7 @@
             {
               "appearance": "dark",
               "value": {
-                "linear-gradient": ["display-p3:0.102,0.071,0.125,1.000", "display-p3:0.047,0.031,0.071,1.000"],
+                "linear-gradient": ["display-p3:0.165,0.110,0.188,1.000", "display-p3:0.047,0.031,0.071,1.000"],
                 "orientation": { "start": { "x": 0.3, "y": 1.0 }, "stop": { "x": 0.7, "y": 0.0 } }
               }
             }
