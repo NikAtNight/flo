@@ -584,7 +584,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.hotkeyActive = false
                 self.state = .failed(UserFacingIssue(
                     summary: "Dictation shortcut unavailable",
-                    details: "Remove and re-add Walkie in Accessibility settings. Walkie will keep retrying."
+                    details: "Remove and re-add Flo in Accessibility settings. Flo will keep retrying."
                 ))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                     self.attemptHotkeyStart()
@@ -657,12 +657,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     state = .failed(UserFacingIssue(
                         summary: "Couldn't switch speech model",
                         details: "Couldn't load \(model): \(error.localizedDescription) "
-                            + "The previous model is still active, and Walkie will retry."
+                            + "The previous model is still active, and Flo will retry."
                     ))
                 } else {
                     state = .failed(UserFacingIssue(
                         summary: "Couldn't load speech model",
-                        details: "\(error.localizedDescription) Walkie will retry."
+                        details: "\(error.localizedDescription) Flo will retry."
                     ))
                 }
                 scheduleModelRetry(generation: generation)
@@ -765,7 +765,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             playCue("Basso")
             state = .failed(UserFacingIssue(
                 summary: "Microphone access needed",
-                details: "Enable Walkie in System Settings > Privacy & Security > Microphone."
+                details: "Enable Flo in System Settings > Privacy & Security > Microphone."
             ))
             scheduleFailureRecovery()
             return
@@ -1208,7 +1208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         playCue("Basso")
         state = .failed(UserFacingIssue(
             summary: "Voice command timed out",
-            details: "The voice edit was cancelled. Try again. If speech recognition stopped responding, switch speech models or restart Walkie."
+            details: "The voice edit was cancelled. Try again. If speech recognition stopped responding, switch speech models or restart Flo."
         ))
         scheduleFailureRecovery()
     }
@@ -1319,7 +1319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: ""
         )
         fixItem.target = self
-        fixItem.toolTip = "Copy your corrected text, then pick this to teach Walkie the fix"
+        fixItem.toolTip = "Copy your corrected text, then pick this to teach Flo the fix"
         menu.addItem(fixItem)
 
         let historyItem = NSMenuItem(
@@ -1544,7 +1544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Learns from an edit the user made by hand: they fix the pasted text
     /// in their app, copy it, and pick this. The clipboard is diffed against
-    /// what LocalFlow actually pasted and the word-level swaps become
+    /// what Flo actually pasted and the word-level swaps become
     /// correction rules, so the same mishearing stops recurring.
     @objc private func fixLastDictation() {
         guard let original = recentTranscripts.first?.text else {

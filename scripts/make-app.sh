@@ -1,6 +1,6 @@
 #!/bin/bash
-# Builds Walkie in release mode and packages it as a proper .app bundle
-# so macOS TCC permissions (Microphone, Accessibility) attach to Walkie
+# Builds Flo in release mode and packages it as a proper .app bundle
+# so macOS TCC permissions (Microphone, Accessibility) attach to Flo
 # itself instead of your terminal.
 #
 # Environment overrides (used by the release workflow; all optional):
@@ -20,14 +20,14 @@ swift build -c release
 
 # Local builds get a separate identity and never use the production installer.
 APP_ID="app.talix.localflow"
-APP="build/Walkie.app"
+APP="build/Flo.app"
 if [[ "${LOCAL_BUILD:-0}" == "1" ]]; then
     if [[ "${1:-}" == "--install" ]]; then
         echo "error: use scripts/local-app.sh install for the local build" >&2
         exit 1
     fi
     APP_ID="app.talix.localflow.local"
-    APP="build/Walkie Local.app"
+    APP="build/Flo Local.app"
     UPDATER_ENABLED=false
 fi
 rm -rf "$APP"
@@ -37,8 +37,8 @@ cp .build/release/LocalFlow "$APP/Contents/MacOS/LocalFlow"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 if [[ "${LOCAL_BUILD:-0}" == "1" ]]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $APP_ID" "$APP/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleName Walkie Local' "$APP/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Walkie Local' "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleName Flo Local' "$APP/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Flo Local' "$APP/Contents/Info.plist"
 fi
 
 # Record the source revision for local diagnostic reports before signing.
@@ -190,19 +190,20 @@ if [[ "${1:-}" == "--install" ]]; then
     # guard. bootout both stops the process and stops supervision.
     launchctl bootout "gui/$(id -u)/app.talix.localflow" 2>/dev/null || true
     # Belt for instances launched outside the agent (Finder, `open`, dev runs).
-    pkill -f '/Applications/Walkie.app/Contents/MacOS/LocalFlow' 2>/dev/null || true
+    PRODUCTION_PROCESS_PATTERN='^/Applications/(Flo|Walkie|LocalFlow)\.app/Contents/MacOS/LocalFlow$'
+    pkill -f "$PRODUCTION_PROCESS_PATTERN" 2>/dev/null || true
     # Verify the old instance is actually gone before swapping the bundle:
     # if bootout failed (label variants, transient launchctl errors),
     # KeepAlive can respawn it and the copy would race a running process.
     for _ in 1 2 3 4 5; do
-        pgrep -f '/Applications/Walkie.app/Contents/MacOS/LocalFlow' >/dev/null || break
+        pgrep -f "$PRODUCTION_PROCESS_PATTERN" >/dev/null || break
         sleep 1
     done
-    pkill -9 -f '/Applications/Walkie.app/Contents/MacOS/LocalFlow' 2>/dev/null || true
-    rm -rf /Applications/Walkie.app
+    pkill -9 -f "$PRODUCTION_PROCESS_PATTERN" 2>/dev/null || true
+    rm -rf /Applications/Flo.app
     cp -R "$APP" /Applications/
-    open /Applications/Walkie.app
-    echo "Installed and relaunched /Applications/Walkie.app"
+    open /Applications/Flo.app
+    echo "Installed and relaunched /Applications/Flo.app"
 else
     echo "Install + relaunch: ./scripts/make-app.sh --install"
     echo "On first launch, grant Microphone and Accessibility when prompted."

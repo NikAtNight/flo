@@ -2,9 +2,9 @@
 
 ## Requirement and owner
 
-Owner: Walkie maintainers. Requested in the September 8, 2026 local testing
+Owner: Flo maintainers. Requested in the September 8, 2026 local testing
 session: use native macOS settings navigation and explain why login and update
-controls are unavailable in Walkie Local. Keep dictation and waveform behavior.
+controls are unavailable in Flo Local. Keep dictation and waveform behavior.
 
 ## Intended behavior
 
@@ -48,7 +48,7 @@ disabled by AppIdentity. History deletion still requires confirmation.
 
 ## Review fixes, September 30, 2026
 
-Owner: Walkie maintainers. The user requested fixes for six reproduced
+Owner: Flo maintainers. The user requested fixes for six reproduced
 review findings. History deletion now runs on the same serial queue as appends,
 so previously queued writes finish before deletion and cannot restore old
 history afterward. A missing history folder counts as success. New dictations
@@ -112,7 +112,7 @@ local login guard. Evidence files below are local, temporary artifacts.
 
 ## Version and diagnostics follow-up
 
-Requested in the same September 8 testing session. Owner: Walkie maintainers.
+Requested in the same September 8 testing session. Owner: Flo maintainers.
 `SettingsPane.available` gates the new pane by AppIdentity. `DiagnosticsPane`
 loads the permanent local `DiagnosticsArchive` on opening or Refresh, using a
 utility-priority task. It loads 200 traces initially and offers older pages.
@@ -178,7 +178,7 @@ refactor. See the [combined verification](dictation-recovery.md#architecture-imp
 
 ## Diagnostics retention follow-up, September 10
 
-Owner: Walkie maintainers. A local upgrade exposed that the pane depended on
+Owner: Flo maintainers. A local upgrade exposed that the pane depended on
 an operational log deleted above 5 MB at launch. `DiagnosticsArchive` now owns
 per-trace timing files, reused by live logging, startup recovery, and the pane.
 Initial migration completes before capture or recording maintenance starts.
@@ -199,7 +199,7 @@ empty. The previous app bundle was preserved by the installer.
 
 ## Production diagnostics, September 10
 
-Owner: Walkie maintainers. The user requested production diagnostics, manual
+Owner: Flo maintainers. The user requested production diagnostics, manual
 support export, and 30-day retention without a size cap, followed by a release.
 Local development history remains unlimited and uses its existing separate path.
 
@@ -237,7 +237,7 @@ completed without changing the lockfile.
 
 ## Live transcript setting, October 2, 2026
 
-Owner: Walkie maintainers. `Settings.liveTranscript` follows the
+Owner: Flo maintainers. `Settings.liveTranscript` follows the
 `keepMicWarm` path through SettingsApplication and SettingsModel, but has no
 live effect closure. `WaveformOverlay` reads it each time it presents. When on,
 the window is the capsule plus a reserve (a 6 pt gap and the panel's

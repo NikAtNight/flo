@@ -1,5 +1,5 @@
 #!/bin/bash
-# Central release policy for Walkie.
+# Central release policy for Flo.
 #
 # Commands:
 #   preflight  Validate the requested build and emit workflow outputs.
@@ -240,8 +240,8 @@ validate_artifacts() {
         fail "APP_VERSION must match release tag version $RELEASE_VERSION"
 
     local dist="${DIST_DIR:-$REPO_ROOT/dist}"
-    local dmg="Walkie-${version}.dmg"
-    local archive="Walkie-${version}.zip"
+    local dmg="Flo-${version}.dmg"
+    local archive="Flo-${version}.zip"
     local appcast="appcast.xml"
     local checksums="SHA256SUMS.txt"
     local setup="setup-s1-mini.sh"

@@ -1,6 +1,6 @@
 import AppKit
 
-// LocalFlow — local push-to-talk dictation for macOS.
+// Flo provides local push-to-talk dictation for macOS.
 // Hold the hotkey, speak, release: WhisperKit transcribes on-device,
 // optional local model cleanup prepares the text for the focused app.
 
@@ -13,13 +13,13 @@ struct LocalFlowMain {
         let arguments = CommandLine.arguments
         if arguments.contains("--import-voice-diagnostics") {
             guard AppIdentity.current.isLocal else {
-                FileHandle.standardError.write(Data("Personal voice collection is available only in Walkie Local.\n".utf8))
+                FileHandle.standardError.write(Data("Personal voice collection is available only in Flo Local.\n".utf8))
                 exit(1)
             }
             let anotherLocalApp = NSRunningApplication.runningApplications(withBundleIdentifier: AppIdentity.localID)
                 .contains { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
             guard !anotherLocalApp else {
-                FileHandle.standardError.write(Data("Quit Walkie Local before importing from the command line, or use Import in Personal voice settings.\n".utf8))
+                FileHandle.standardError.write(Data("Quit Flo Local before importing from the command line, or use Import in Personal voice settings.\n".utf8))
                 exit(1)
             }
             Task {
@@ -72,7 +72,7 @@ struct LocalFlowMain {
             .flatMap { NSRunningApplication.runningApplications(withBundleIdentifier: $0) }
             .contains { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
         if alreadyRunning {
-            FileHandle.standardError.write(Data("Walkie is already running — exiting this instance.\n".utf8))
+            FileHandle.standardError.write(Data("Flo is already running — exiting this instance.\n".utf8))
             return
         }
 

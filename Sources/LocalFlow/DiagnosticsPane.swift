@@ -90,7 +90,7 @@ struct DiagnosticsPane: View {
     private func export() async {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = "Walkie-diagnostics.txt"
+        panel.nameFieldStringValue = "Flo-diagnostics.txt"
         panel.message = "Save timing and build/device metadata to share with support. No transcripts or audio are included."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         exporting = true
