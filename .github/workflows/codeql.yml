@@ -48,8 +48,9 @@ jobs:
             .build
           # This namespace contains dependency builds only. Never restore the
           # old full-app cache, which could hide unchanged files from CodeQL.
-          key: ${{ runner.os }}-${{ runner.arch }}-codeql-deps-v1-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: ${{ runner.os }}-${{ runner.arch }}-codeql-deps-v1-${{ steps.toolchain.outputs.fingerprint }}-
+          # v2: the rename to flo moved the checkout path.
+          key: ${{ runner.os }}-${{ runner.arch }}-codeql-deps-v2-${{ steps.toolchain.outputs.fingerprint }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: ${{ runner.os }}-${{ runner.arch }}-codeql-deps-v2-${{ steps.toolchain.outputs.fingerprint }}-
 
       - name: Resolve SwiftPM dependencies
         run: swift package resolve
