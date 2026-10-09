@@ -6,7 +6,7 @@ VALIDATOR="$REPO_ROOT/scripts/validate-release.sh"
 RELEASE_LIB="$REPO_ROOT/scripts/release-lib.sh"
 RELEASE_WORKFLOW="$REPO_ROOT/.github/workflows/release.yml"
 RELEASE_PLEASE_WORKFLOW="$REPO_ROOT/.github/workflows/release-please.yml"
-README="$REPO_ROOT/README.md"
+RELEASE_DOCS="$REPO_ROOT/docs/development.md"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/localflow-release-contract.XXXXXX")"
 DIST_DIR="$TEST_ROOT/dist"
 FRAMEWORK_PATH="$TEST_ROOT/Sparkle.framework"
@@ -691,7 +691,7 @@ write_appcast() {
         '<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">' \
         '  <channel>' \
         '    <item>' \
-        "      <enclosure url=\"https://github.com/NikAtNight/flo/releases/download/v1.2.3/$archive_name\" sparkle:edSignature=\"$signature\" />" \
+        "      <enclosure url=\"https://github.com/dev-talix/flo/releases/download/v1.2.3/$archive_name\" sparkle:edSignature=\"$signature\" />" \
         '    </item>' \
         '  </channel>' \
         '</rss>' > "$DIST_DIR/appcast.xml"
@@ -1324,10 +1324,10 @@ test_release_source_rejects_version_rollback() {
 test_release_docs_describe_only_trusted_automatic_flow() {
     local release_docs
     release_docs="$(awk '
-        /^## Cutting a release$/ { active=1 }
-        active && /^## / && $0 != "## Cutting a release" { active=0 }
+        /^## Releases$/ { active=1 }
+        active && /^## / && $0 != "## Releases" { active=0 }
         active { print }
-    ' "$README")"
+    ' "$RELEASE_DOCS")"
     for expected in 'Release Please' 'automatically' 'main push' 'release.yml'; do
         if ! grep -Fiq "$expected" <<< "$release_docs"; then
             fail "release documentation must describe $expected"
