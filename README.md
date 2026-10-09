@@ -9,7 +9,7 @@
 
 <p align="center">
   <a href="https://flo.talix.app">flo.talix.app</a> ·
-  <a href="https://github.com/NikAtNight/flo/releases/latest">Download</a> ·
+  <a href="https://github.com/dev-talix/flo/releases/latest">Download</a> ·
   <a href="SECURITY.md">Security</a>
 </p>
 
@@ -59,7 +59,7 @@ path until you reinstall from the DMG.
 To check a download came from this repo's release workflow:
 
 ```bash
-gh attestation verify Flo-<version>.dmg --repo NikAtNight/flo
+gh attestation verify Flo-<version>.dmg --repo dev-talix/flo
 shasum -a 256 -c SHA256SUMS.txt   # attached to each release
 ```
 
