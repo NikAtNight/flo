@@ -51,6 +51,12 @@ test without touching the release build:
 
 ## App naming and upgrades
 
+Flo was called LocalFlow before 1.8.0 and Walkie in 1.8.0. It became Flo in
+1.10.0. Existing installs update in place and keep their settings,
+permissions, and data. The data folder and log file still use the LocalFlow
+name. Sparkle updates can keep the old `/Applications/Walkie.app` or
+`/Applications/LocalFlow.app` path until you reinstall from the DMG.
+
 Owner: Flo maintainers. The October 8, 2026 request renames the application
 from Walkie to Flo. It follows the LocalFlow-to-Walkie rename in `ad726e1`.
 The visible names are Flo and Flo Local. App bundles, DMG/ZIP filenames,
@@ -139,6 +145,27 @@ python3 -B Tests/StartupReadinessTests.py   # no mic or model download needed
 ```
 
 CI runs all of these except the startup readiness check.
+
+## Releases
+
+Release Please maintains the version PR. Merging it updates the release
+manifest, and that main push automatically calls
+`.github/workflows/release.yml`. The workflow tests, signs, notarizes, and
+packages the app, validates the DMG, Sparkle feed, and checksums, then
+publishes the tag and GitHub Release. A failed run can leave a private draft,
+never a partial public release. It also fails if `FoundationModels` didn't
+link, since that build would ship without command mode or on-device cleanup.
+
+Required repository secrets:
+
+| Secret | What it is |
+|---|---|
+| `MAC_CERT_P12_BASE64` | Developer ID Application certificate + key, as base64 .p12 |
+| `MAC_CERT_PASSWORD` | Password for that .p12 |
+| `APPLE_ID` | Apple ID for notarization |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password for that Apple ID |
+| `APPLE_TEAM_ID` | Developer team ID |
+| `SPARKLE_PRIVATE_KEY` | EdDSA key matching the public key in `Info.plist` |
 
 ## CodeQL scans
 
