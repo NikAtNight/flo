@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.11.1](https://github.com/dev-talix/flo/compare/v1.10.0...v1.11.1) (2026-10-10)
+
+
+### Features
+
+* add monochrome light and dark Flo app icons ([#42](https://github.com/dev-talix/flo/issues/42)) ([99b75e0](https://github.com/dev-talix/flo/commit/99b75e0a2666bfab79b72c849ed2a70bc12d4631))
+
+
+This release replaces the unpublished 1.11.0 release, which had the same changes.
+
 ## [1.11.0](https://github.com/dev-talix/flo/compare/v1.10.0...v1.11.0) (2026-10-10)
 
 
